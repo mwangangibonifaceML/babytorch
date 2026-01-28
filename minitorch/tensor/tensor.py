@@ -16,16 +16,19 @@ BYTES_PER_FLOAT32 = 4
 
 #* Basic Tensor class
 class Tensor:
-    """Educational tensor class that grows as we gain more knowledge
+    """A tensor class that tries to mimick a pytorch tensor
     
     This class starts simple but includes dormant features for future modules:
-    - requires_grad: Will be used for automatic differentiation (Module 05)
-    - grad: Will store computed gradients (Module 05)
-    - backward(): Will compute gradients (Module 05)
+    - requires_grad: Will be used for automatic differentiation (implemented in autograd module)
+    - grad: Will store computed gradients (implemented in autograd module)
+    - backward(): Will compute gradients (the core idea in autograd module)
 
-    For now, focus on: data, shape, and basic operations.
+    For now,this class focuses on: data, shape, and basic operations.
     """
-    def __init__(self, data: Union[NDArray, list[int|float], int, float], requires_grad: bool =False) -> None:
+    def __init__(
+        self,
+        data: Union[NDArray, list[int|float], int, float],
+        requires_grad: bool =False) -> None:
         if not isinstance(data, np.ndarray):
             self.data = np.array(data)
         else:
