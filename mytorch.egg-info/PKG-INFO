@@ -1,0 +1,8 @@
+Metadata-Version: 2.4
+Name: mytorch
+Version: 0.1.0
+Summary: Add your description here
+Requires-Python: ==3.10.17
+Description-Content-Type: text/markdown
+Requires-Dist: minitorch>=0.1.0
+Requires-Dist: numpy>=2.2.6
