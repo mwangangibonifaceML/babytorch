@@ -7,7 +7,7 @@
 
 from __future__ import annotations
 import numpy as np
-from typing import Tuple, Union, Optional, List, Any, Iterable
+from typing import Union, Optional, List, Any
 from numpy.typing import NDArray
 
 #* Constants for memory calculations
@@ -27,8 +27,10 @@ class Tensor:
     """
     def __init__(
         self,
-        data: Union[NDArray, list[int|float], int, float],
-        requires_grad: bool =False) -> None:
+        data: Union[NDArray, List[int|float], int, float],
+        requires_grad: bool =False,
+        _parents=()
+        ) -> None:
         if not isinstance(data, np.ndarray):
             self.data = np.array(data)
         else:
@@ -38,7 +40,9 @@ class Tensor:
         self.size = self.data.size          #* Int, look at the number of elements in numpy arrays
         self.dtype = self.data.dtype        #* Data type of the underlying numpy array
         self.requires_grad = requires_grad  #* The trigger for gradient computation (dormant feature)
-        self.grad = None                    #* Placeholder: store gradients here in future modules
+        self.grad = 0.0                      #* Placeholder: store gradients here in future modules
+        self._backward = lambda: None
+        self._parents = set(_parents)
         
     def __repr__(self) -> str:
         gradient_info = f"requires_grad={self.requires_grad}" if self.requires_grad else None
@@ -64,47 +68,68 @@ class Tensor:
             return self.requires_grad or other.requires_grad
         return self.requires_grad
     
+    def __len__(self)->int:
+        return len(self.data)
+    
     def __add__(self, other)-> Tensor:
         """Add two tensors element-wise with broadcasting support
         """
-        if isinstance(other, Tensor):
-            return Tensor(self.data + other.data,
-                        requires_grad= self._determine_gradient_requirement(other))
-        else:
-            return Tensor(self.data + other,
-                        requires_grad= self._determine_gradient_requirement(other))
+        if not isinstance(other, Tensor):
+            other = Tensor(other)
+        result = Tensor(self.data + other.data,
+                    requires_grad= self._determine_gradient_requirement(other),
+                    _parents= (self, other))
+        
+        def _backward():
+            self.grad += 1.0 * result.grad
+            other.grad += 1.0 * result.grad
+        result._backward = _backward
+        return result
         
     def __mul__(self, other)-> Tensor:
         """Multiply two tensors element-wise (NOT matrix multiplication)."""
-        if isinstance(other, Tensor):
-            return Tensor(self.data * other.data,
-                        requires_grad= self._determine_gradient_requirement(other))
-        else:
-            return Tensor(self.data * other,
-                        requires_grad= self._determine_gradient_requirement(other))
+        if not isinstance(other, Tensor):
+            other = Tensor(other)
+        result = Tensor(self.data * other.data,
+                    requires_grad= self._determine_gradient_requirement(other),
+                    _parents=(self,other))
+        
+        def _backward():
+            self.grad += other.data * result.grad
+            other.grad += self.data * result.grad
+        
+        result._backward = _backward
+        return result
         
     def __sub__(self, other)-> Tensor:
         """Subtract two tensors element-wise."""
-        if isinstance(other, Tensor):
-            return Tensor(self.data - other.data,
-                        requires_grad= self._determine_gradient_requirement(other))
-        else:
-            return Tensor(self.data - other,
-                        requires_grad= self._determine_gradient_requirement(other))
+        if not isinstance(other, Tensor):
+            other = Tensor(other)
+        result = Tensor(self.data - other.data,
+                    requires_grad= self._determine_gradient_requirement(other),
+                    _parents=(self,other))
+        
+        def _backward():
+            self.grad += 1.0 * result.grad
+            other.grad -= 1.0 * result.grad
+        
+        result._backward = _backward
+        return result
         
     def __truediv__(self, other)-> Tensor:
         """Divide two tensors element-wise."""
         if isinstance(other, Tensor):
             return Tensor(self.data / other.data,
                         requires_grad= self._determine_gradient_requirement(other))
-        else:
-            return Tensor(self.data / other,
-                        requires_grad= self._determine_gradient_requirement(other))
+        
 
     def __matmul__(self, other)-> Tensor:
         """Enable @ operator for matrix multiplication"""
         return self.matmul(other)
     
+    def __neg__(self):
+        return Tensor(-self.data, requires_grad=self.requires_grad)
+
     def __rsub__(self, other):
         return Tensor(other - self.data, requires_grad=self.requires_grad)
 
@@ -114,15 +139,28 @@ class Tensor:
     def __pow__(self, other):
         if not isinstance(other, (float, int)):
             raise AssertionError('Power must be either integer or a float')
-        return Tensor(self.data ** other, requires_grad=self.requires_grad)
+        result =  Tensor(self.data ** other,
+                        requires_grad=self.requires_grad,
+                        _parents=(self,))
+        
+        def _backward():
+            self.grad = other * self.data ** other - 1 * result.grad
+        result._backward = _backward
+        return result
     
     def matmul(self, other)-> Tensor:
         """Matrix multiplication for two tensors"""
         assert isinstance(other, Tensor), "Operand must be a Tensor"
         if self.shape == () or other.shape == ():
-            return Tensor(self.data * other.data)
+            result = Tensor(self.data * other.data, 
+                        requires_grad= self._determine_gradient_requirement(other),
+                        _parents=(self, other))
+            
         if len(self.shape) == 0 or len(other.shape) == 0:
-            return Tensor(self.data * other.data)
+            result = Tensor(self.data * other.data,
+                        requires_grad= self._determine_gradient_requirement(other),
+                        _parents=(self,other))
+            
         if len(self.shape) >= 2 and len(other.shape) >=2:
             if self.shape[-1] != other.shape[-2]:
                 raise ValueError(
@@ -130,15 +168,16 @@ class Tensor:
                     f"Inner dimensions must match: {self.shape[-1] } ≠ {other.shape[-2]}"
                 )
         
-        #* Below piece of code will me slower than np.matmul to demonstrate the values of
-        #* vectorization. Will be accelerated later on
-        
+        #* Below piece of code will me slower than np.matmul
         #* Handle 2D|3D and so on matrices with explicit loops
         # start with 2D
         if len(self.shape) == 2 and len(other.shape) == 2:
             M,K = self.data.shape
             k2,N = other.data.shape
             results_data = np.zeros((M,N), dtype= self.dtype)
+            result = Tensor(results_data,
+                        requires_grad=self._determine_gradient_requirement(other),
+                        _parents=(self,other))
             
             #* Explicit loops
             for row in range(M):
@@ -146,7 +185,17 @@ class Tensor:
                     results_data[row, col] = np.dot(self.data[row, :], other.data[:, col])
         else: # 3D+ operations
             results_data = np.matmul(self.data, other.data)
-        return Tensor(results_data, requires_grad=self._determine_gradient_requirement(other))
+            
+            result = Tensor(results_data,
+                            requires_grad=self._determine_gradient_requirement(other),
+                            _parents=(self,other))
+        
+        def _backward():
+            self.grad += result.grad * other.data.T
+            other.grad += self.data.T * result.grad
+        
+        result._backward = _backward
+        return result
     
     def __getitem__(self, key):
         """Enable Tensor indexing and slicing"""
@@ -174,7 +223,21 @@ class Tensor:
     def backward(self):
         """Compute gradient"""
         #* implemented later
-        pass
+        topo =[]
+        visited = set()
+        def build_graph(root):
+            if not root in visited:
+                visited.add(root)
+                for parent in root._parents:
+                    build_graph(parent)
+            topo.append(root)
+            
+        build_graph(self)
+            
+        self.grad = 1.0
+        for node in reversed(topo):
+            if node.requires_grad:
+                node._backward()
     
     def reshape(self, *shape):
         """Reshape the tensor to a new dimensions"""
