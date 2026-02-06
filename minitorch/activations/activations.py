@@ -59,16 +59,22 @@ class Sigmoid:
         negative_mask = clipped_X < 0
         z = np.exp(clipped_X[negative_mask])
         results[negative_mask] = z / (1 + z)
-        return Tensor(results)
+        
+        results = Tensor(results, requires_grad=X.requires_grad, _parents=(X,))
+        
+        if X.requires_grad:
+            def _backward():
+                Sigmoid_gradient = results.data * (1 - results.data)
+                X._add_grad(results.grad * Sigmoid_gradient)
+            results._backward = _backward
+            
+        return results
         
     def __call__(self, x: Tensor) -> Tensor:
         """Allows the activation to be called like a function."""
         return self.forward(x)
 
-    # def backward(self, grad: Tensor) -> Tensor:
-    #     """Backward pass of the Sigmoid activation function."""
-    #     pass
-
+    
 
 class ReLU:
     
@@ -100,16 +106,17 @@ class ReLU:
         Returns:
             Tensor: Output tensor after applying ReLU activation.
         """
-        result = np.maximum(0, X.data)
-        return Tensor(result)
+        result = Tensor(np.maximum(0, X.data), requires_grad=X.requires_grad, _parents=(X,))
+        
+        if X.requires_grad:
+            def _backward():
+                X._add_grad(result.grad * (result.data > 0))
+            result._backward = _backward
+        return result
     
     def __call__(self, x: Tensor) -> Tensor:
         """Allows the activation to be called like a function."""
         return self.forward(x)
-
-    # def backward(self, grad: Tensor) -> Tensor:
-    #     """Backward pass of the ReLU activation function."""
-    #     pass
 
 class Tanh:
     """Tanh activation: f(x) = tanh(x)
@@ -141,15 +148,18 @@ class Tanh:
             Tensor: Output tensor after applying Tanh activation.
         """
         result = np.tanh(X.data)
-        return Tensor(result)
+        result = Tensor(result, requires_grad=X.requires_grad, _parents=(X,))
+        
+        if X.requires_grad:
+            def _backward():
+                Tanh_gradient = 1 - result.data ** 2
+                X._add_grad(result.grad * Tanh_gradient)
+            result._backward = _backward
+        return result
 
     def __call__(self, x: Tensor) -> Tensor:
         """Allows the activation to be called like a function."""
         return self.forward(x)
-
-    # def backward(self, grad: Tensor) -> Tensor:
-    #     """Backward pass of the Tanh activation function."""
-    #     pass
 
 class GELU:
     """GELU activation: f(x) = 0.5x(1 + tanh(sqrt(2/π)(x + 0.0044715x^3)))"""
@@ -171,16 +181,19 @@ class GELU:
         sigmoid_part = -1.702 * X.data
         sigmoid_part = np.exp(sigmoid_part)
         sigmoid_part = 1 / (1 + sigmoid_part)  #* Extract data for multiplication
-        result = X.data * sigmoid_part
-        return Tensor(result)
+        result = Tensor(X.data * sigmoid_part, requires_grad=X.requires_grad, _parents=(X,))
+        
+        if X.requires_grad:
+            def _backward():
+                sig_grad = sigmoid_part * (1 - sigmoid_part)
+                grad = sigmoid_part + X.data * sig_grad * 1.702
+                X._add_grad(result.grad * grad)
+            result._backward = _backward
+        return result
     
     def __call__(self, x: Tensor) -> Tensor:
         """Allows the activation to be called like a function."""
         return self.forward(x)
-    
-    # def backward(self, grad: Tensor) -> Tensor:
-    #     """Backward pass of the GELU activation function."""
-    #     pass
     
 class Softmax:
     """Softmax activation: f(x_i) = e^(x_i) / Σ e^(x_j)
@@ -204,8 +217,17 @@ class Softmax:
         x_shifted = x - np.max(x, axis=dim, keepdims=True)
         exp_x = np.exp(x_shifted)
         sum_exp_x = np.sum(exp_x, axis=dim, keepdims=True)
-        result = exp_x / sum_exp_x
-        return Tensor(result)
+        softmax = exp_x / sum_exp_x
+        result = Tensor(softmax, requires_grad= X.requires_grad, _parents=(X,))
+        
+        if X.requires_grad:
+            def _backward():
+                softmax_grad = softmax * softmax
+                gradient = result.grad * softmax_grad
+                X._add_grad(gradient)
+            result._backward = _backward
+        
+        return result
         
     def __call__(self, x: Tensor) -> Tensor:
         """Allows the activation to be called like a function."""

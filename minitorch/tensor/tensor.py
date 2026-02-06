@@ -1,5 +1,4 @@
 #------------------------------------------------------------------------------------#
-#* Module 01: Tensor Foundation - Building Blocks of ML
 #* File: tensor.py - Implementation of a basic Tensor class using NumPy
 #* A simple Tensor class that wraps a NumPy array and provides basic tensor operations.
 #* This serves as the foundational data structure for building machine learning models.
@@ -13,6 +12,21 @@ from numpy.typing import NDArray
 #* Constants for memory calculations
 MB_TO_BYTES = 1024 * 1024
 BYTES_PER_FLOAT32 = 4
+
+def unbroadcast(grad, shape):
+    """
+    Sum grad so that it matches target_shape.
+    """
+    #* remove the leading dimension
+    while grad.ndim > len(shape):
+        grad = grad.sum(axis=0)
+        
+    #* sum over the broadcasted dimension
+    for i, dim in enumerate(shape):
+        if dim == 1:
+            grad = grad.sum(axis=i, keepdims=True)
+    return grad
+
 
 #* Basic Tensor class
 class Tensor:
@@ -40,7 +54,10 @@ class Tensor:
         self.size = self.data.size          #* Int, look at the number of elements in numpy arrays
         self.dtype = self.data.dtype        #* Data type of the underlying numpy array
         self.requires_grad = requires_grad  #* The trigger for gradient computation (dormant feature)
-        self.grad = 0.0                      #* Placeholder: store gradients here in future modules
+        
+        self.grad = np.zeros_like(
+            self.data, dtype=np.float32) if requires_grad else None      #* Placeholder: store gradients here in future modules
+        
         self._backward = lambda: None
         self._parents = set(_parents)
         
@@ -54,6 +71,9 @@ class Tensor:
     def numpy(self)-> np.ndarray:
         """Return the underlying numpy array"""
         return self.data.copy()
+    
+    def copy(self) -> Tensor:
+        return Tensor(self.data.copy())
     
     def memory_footprint(self)-> int:
         """Calculate exact memory usage in bytes
@@ -81,8 +101,12 @@ class Tensor:
                     _parents= (self, other))
         
         def _backward():
-            self.grad += 1.0 * result.grad
-            other.grad += 1.0 * result.grad
+            if self.requires_grad:
+                self._add_grad(unbroadcast(result.grad, self.shape))
+                
+            if other.requires_grad:
+                other._add_grad(unbroadcast(result.grad, other.shape))
+                
         result._backward = _backward
         return result
         
@@ -95,8 +119,11 @@ class Tensor:
                     _parents=(self,other))
         
         def _backward():
-            self.grad += other.data * result.grad
-            other.grad += self.data * result.grad
+            if self.requires_grad:
+                self._add_grad(other.data * result.grad)
+                
+            if other.requires_grad:
+                other._add_grad(self.data * result.grad)
         
         result._backward = _backward
         return result
@@ -110,31 +137,77 @@ class Tensor:
                     _parents=(self,other))
         
         def _backward():
-            self.grad += 1.0 * result.grad
-            other.grad -= 1.0 * result.grad
+            if self.requires_grad:
+                self._add_grad(unbroadcast(result.grad, self.shape))
+            
+            if other.requires_grad:
+                other._add_grad(-unbroadcast(result.grad, other.shape))
         
         result._backward = _backward
         return result
         
     def __truediv__(self, other)-> Tensor:
         """Divide two tensors element-wise."""
-        if isinstance(other, Tensor):
-            return Tensor(self.data / other.data,
-                        requires_grad= self._determine_gradient_requirement(other))
+        if not isinstance(other, Tensor):
+            other = Tensor(other)
+        result = Tensor(self.data / other.data,
+                        requires_grad= self._determine_gradient_requirement(other),
+                        _parents=(self,other))
         
+        def _backward():
+            if self.requires_grad:
+                self._add_grad(result.grad / other.data)
+                
+            if other.requires_grad:
+                other._add_grad(-result.grad * self.data / other.data ** 2)  
+        result._backward = _backward
+        return result
 
     def __matmul__(self, other)-> Tensor:
         """Enable @ operator for matrix multiplication"""
         return self.matmul(other)
     
     def __neg__(self):
-        return Tensor(-self.data, requires_grad=self.requires_grad)
-
+        result = Tensor(-self.data, requires_grad=self.requires_grad, _parents=(self,))
+        
+        def _backward():
+            if self.requires_grad:
+                self._add_grad(-result.grad)
+        result._backward = _backward
+        return result
+    
     def __rsub__(self, other):
-        return Tensor(other - self.data, requires_grad=self.requires_grad)
+        if not isinstance(other, Tensor):
+            other = Tensor(other)
+        result = Tensor(other - self.data,
+                        requires_grad=self._determine_gradient_requirement(other),
+                        _parents=(self,))
+        
+        def _backward():
+            if other.requires_grad:
+                other._add_grad(result.grad)
+            
+            if self.requires_grad:
+                self._add_grad(-result.grad)
+        result._backward = _backward
+        return result
 
     def __rtruediv__(self, other):
-        return Tensor(other / self.data, requires_grad=self.requires_grad)
+        if not isinstance(other, Tensor):
+            other = Tensor(other)
+        result = Tensor(other / self.data,
+                        requires_grad=self._determine_gradient_requirement(other),
+                        _parents=(self, other))
+        
+        def _backward():
+            if other.requires_grad:
+                other._add_grad(result.grad / self.data)
+            
+            if self.requires_grad:
+                self._add_grad(-result.grad * other.data / self.data ** 2)
+            
+        result._backward = _backward
+        return result
     
     def __pow__(self, other):
         if not isinstance(other, (float, int)):
@@ -144,13 +217,14 @@ class Tensor:
                         _parents=(self,))
         
         def _backward():
-            self.grad = other * self.data ** other - 1 * result.grad
+            if self.requires_grad:
+                self._add_grad(other * (self.data ** (other - 1)) * result.grad)
         result._backward = _backward
         return result
     
     def matmul(self, other)-> Tensor:
         """Matrix multiplication for two tensors"""
-        assert isinstance(other, Tensor), "Operand must be a Tensor"
+        other = other if isinstance(other, Tensor) else Tensor(other)
         if self.shape == () or other.shape == ():
             result = Tensor(self.data * other.data, 
                         requires_grad= self._determine_gradient_requirement(other),
@@ -172,8 +246,8 @@ class Tensor:
         #* Handle 2D|3D and so on matrices with explicit loops
         # start with 2D
         if len(self.shape) == 2 and len(other.shape) == 2:
-            M,K = self.data.shape
-            k2,N = other.data.shape
+            M,_ = self.data.shape
+            _,N = other.data.shape
             results_data = np.zeros((M,N), dtype= self.dtype)
             result = Tensor(results_data,
                         requires_grad=self._determine_gradient_requirement(other),
@@ -191,8 +265,11 @@ class Tensor:
                             _parents=(self,other))
         
         def _backward():
-            self.grad += result.grad * other.data.T
-            other.grad += self.data.T * result.grad
+            if self.requires_grad:
+                self._add_grad(result.grad @ other.data.T)
+                
+            if other.requires_grad:
+                other._add_grad(self.data.T @ result.grad)
         
         result._backward = _backward
         return result
@@ -201,46 +278,104 @@ class Tensor:
         """Enable Tensor indexing and slicing"""
         assert key <= len(self.data), f'Index out of range, must be in range 0 - {len(self.data)}'
         results_data = self.data[key]
+
         if not isinstance(results_data, np.ndarray):
             results_data = np.array(results_data)
-        return Tensor(results_data, requires_grad= self.requires_grad)
+        result = Tensor(results_data, requires_grad= self.requires_grad, _parents=(self,))
+        
+        grad_input = np.zeros(self.data.shape, dtype=np.float32)
+        grad_input[key] = result.grad
+        
+        def _backward():
+            if self.requires_grad:
+                self._add_grad(grad_input)
+        result._backward = _backward
+        
+        return result
+    
     
     def sum(self, axis=None, keepdims=False)-> Tensor:
         """Sum tensor along specified axis"""
-        return Tensor(np.array(np.sum(self.data, axis=axis, keepdims= keepdims)),
-                    requires_grad= self.requires_grad)
+        result =  Tensor(np.array(np.sum(self.data, axis=axis, keepdims= keepdims)),
+                    requires_grad= self.requires_grad, _parents=(self,))
+        
+        def _backward():
+            if self.requires_grad:
+                self._add_grad(np.ones_like(self.data) * result.grad)
+        
+        result._backward = _backward
+        return result
+    # def sum(self, axis=None, keepdims=False):
+    #     data = self.data.sum(axis=axis, keepdims=keepdims)
+    #     out = Tensor(data, requires_grad=self.requires_grad)
+
+    #     def _backward():
+    #         if not self.requires_grad:
+    #             return
+
+    #         grad = out.grad
+
+    #         # If dimensions were removed, reinsert them
+    #         if axis is not None and not keepdims:
+    #             if isinstance(axis, int):
+    #                 axes = (axis,)
+    #             else:
+    #                 axes = axis
+    #             for ax in sorted(axes):
+    #                 grad = np.expand_dims(grad, ax)
+
+    #         # Broadcast to input shape
+    #         grad = np.broadcast_to(grad, self.shape)
+
+    #         self._add_grad(grad)
+
+    #     if out.requires_grad:
+    #         out._backward = _backward
+
+    #     return out
+
     
     def mean(self, axis=None, keepdims=False)-> Tensor:
         """Sum tensor along specified axis"""
-        return Tensor(np.array(np.mean(self.data, axis=axis, keepdims= keepdims)),
-                    requires_grad= self.requires_grad)
+        result =  Tensor(np.array(np.mean(self.data, axis=axis, keepdims= keepdims)),
+                    requires_grad= self.requires_grad, _parents=(self,))
+        
+        def _backward():
+            if self.requires_grad:
+                self._add_grad(result.grad / self.data.size)
+        result._backward = _backward
+        return result
+    # def mean(self, axis=None, keepdims=False):
+    #     if axis is None:
+    #         denom = self.data.size
+    #     else:
+    #         if isinstance(axis, int):
+    #             denom = self.data.shape[axis]
+    #         else:
+    #             denom = np.prod([self.data.shape[a] for a in axis])
+
+    #     out = self.sum(axis=axis, keepdims=keepdims)
+    #     out.data = out.data / denom
+
+    #     if out.requires_grad:
+    #         prev_backward = out._backward
+
+    #         def _backward():
+    #             prev_backward()
+    #             self.grad /= denom
+
+    #         out._backward = _backward
+
+    #     return out
 
     def max(self, axis:Optional[int]=None, keepdims=False) -> Tensor:
         """Find the max value of a tensor along specified axis"""
         return Tensor(np.array(np.max(self.data, axis=axis, keepdims=keepdims)),
-                    requires_grad= self.requires_grad)
-    
-    def backward(self):
-        """Compute gradient"""
-        #* implemented later
-        topo =[]
-        visited = set()
-        def build_graph(root):
-            if not root in visited:
-                visited.add(root)
-                for parent in root._parents:
-                    build_graph(parent)
-            topo.append(root)
-            
-        build_graph(self)
-            
-        self.grad = 1.0
-        for node in reversed(topo):
-            if node.requires_grad:
-                node._backward()
+                    requires_grad= self.requires_grad, _parents=(self,))
     
     def reshape(self, *shape):
         """Reshape the tensor to a new dimensions"""
+        original_shape = self.shape
         if len(shape) == 1 and isinstance(shape[0], (tuple, list)):
             new_shape = tuple(shape[0])
         else:
@@ -263,7 +398,12 @@ class Tensor:
                 f"Total elements must match: {self.size} ≠ {target_size}"
             )
         reshaped_data = np.reshape(self.data, new_shape)
-        result = Tensor(reshaped_data, requires_grad=self.requires_grad)
+        result = Tensor(reshaped_data, requires_grad=self.requires_grad, _parents=(self,))
+        
+        def _backward():
+            if self.requires_grad:
+                self._add_grad(result.grad.reshape(original_shape))
+        result._backward = _backward
         return result
     
     def transpose(self, dim0=None, dim1=None):
@@ -282,9 +422,100 @@ class Tensor:
             axes = list(range(len(self.shape)))
             axes[dim0], axes[dim1] = axes[dim1], axes[dim0]
             transposed_data = np.transpose(self.data, axes)
-        result = Tensor(transposed_data, requires_grad=self.requires_grad)
+        result = Tensor(transposed_data, requires_grad=self.requires_grad, _parents=(self,))
+        
+        def _backward():
+            if self.requires_grad:
+                self._add_grad(result.grad.transpose(dim0, dim1))
+        
+        result._backward = _backward
         return result
     
     def detach(self):
         """Return a new Tensor detached from the current computation graph."""
         return Tensor(self.data.copy(), requires_grad=False)
+    
+    def backward(self):
+        """Compute gradient"""
+        topo =[]
+        visited = set()
+        def build_graph(root):
+            if not root in visited:
+                visited.add(root)
+                for parent in root._parents:
+                    build_graph(parent)
+            topo.append(root)
+            
+        build_graph(self)
+            
+        self.grad = np.ones_like(self.data, dtype=np.float32)
+        for node in reversed(topo):
+            node._backward()
+            
+    def _add_grad(self, grad):
+        if not self.requires_grad:
+            return 
+        
+        if self.grad is None:
+            self.grad = np.zeros_like(self.data, dtype=np.float32)
+            
+        # print(self.grad.shape, grad.shape)
+        self.grad += grad
+        
+    #* ============ ACTIVATIONS ===============
+    
+    def tanh(self):
+        "Hyperbolic tangent activation function"
+        #* forward pass : exp(x) - exp(-x) / exp(x) + exp(-x)
+        t = np.tanh(self.data)
+        result = Tensor(t, requires_grad=self.requires_grad, _parents=(self,))
+        
+        def _backward():
+            if self.requires_grad:
+                self._add_grad((1 - t ** 2) * result.grad)
+        result._backward = _backward
+        return result
+    
+    def sigmoid(self):
+        """Sigmoid activation: σ(x) = 1/(1 + e^(-x))
+    
+        Maps input to the range (0, 1).
+        Perfect for probabilities and binary classification
+        
+        Args:
+            X (Tensor): Input tensor.
+        
+        Returns:
+            Tensor: Output tensor after applying Sigmoid activation.
+        """
+        #* Apply sigmoid: 1 / (1 + (-X).exp())
+        #* clip extreme values to prevent overflows (sigmoid(-500) ~ 0, sigmoid(500) ~ 1)
+        #* clipping at -500 and 500 ensures that exp(-x) stays within float64 range
+        
+        clipped_X = np.clip(self.data, -500, 500)
+        
+        #* Use numerical stable sigmoid formula
+        #* for positive numbers: 1 / (1 + exp(-x))
+        #* for negative numbers: exp(x) / (1 + exp(x))
+        
+        results = np.zeros_like(clipped_X)
+        
+        #* For positive numbers
+        positive_mask = clipped_X >= 0
+        z = np.exp(-clipped_X[positive_mask])
+        results[positive_mask] = 1 / (1 + z)
+        
+        #* For negative numbers
+        negative_mask = clipped_X < 0
+        z = np.exp(clipped_X[negative_mask])
+        results[negative_mask] = z / (1 + z)
+        
+        results = Tensor(results, requires_grad=self.requires_grad, _parents=(self,))
+        
+        if self.requires_grad:
+            def _backward():
+            
+                sigmoid_gradient = results.data * (1 - results.data)
+                self._add_grad(results.grad * sigmoid_gradient)
+            results._backward = _backward
+        return results

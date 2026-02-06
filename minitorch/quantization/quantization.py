@@ -7,7 +7,7 @@ import numpy as np
 from typing import Tuple, Dict, List, Optional
 from minitorch.tensor.tensor import Tensor
 from minitorch.activations.activations import ReLU
-from minitorch.layers.layers import Linear, Sequential
+from minitorch.nn.layers import Linear, Sequential
 
 #* constants for INT8 quantization
 INT8_MIN_VALUE = -128

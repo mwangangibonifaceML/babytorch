@@ -1,7 +1,7 @@
 import numpy as np
 import minitorch
 from minitorch.activations.activations import ReLU, Sigmoid, Tanh, Softmax
-from minitorch.layers.layers import Sequential, Linear, Dropout
+from minitorch.nn.layers import Sequential, Linear, Dropout
 from minitorch.tensor.tensor import Tensor
 from minitorch.dataloaders.dataloader import Dataset, TensorDataset
 from typing import Tuple

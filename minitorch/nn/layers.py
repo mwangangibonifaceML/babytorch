@@ -15,6 +15,56 @@ DROPOUT_MAX_PROB = 1.0 # drop everything
 
 TOLERANCE = 1e-3 # numerical tolerance for floating point comparisons
 
+def _get_modules(obj) -> list['Module']:
+    """
+    A simple recursive function that finds all Module objects within any given
+    object by searching through its attributes, lists, tuples, and dicts.
+    """
+    modules = []
+    if isinstance(obj, Layer):
+        return [obj]
+        
+    if isinstance(obj, dict):
+        for value in obj.values():
+            modules.extend(_get_modules(value))
+
+    if isinstance(obj, (list, tuple)):
+        for item in obj:
+            modules.extend(_get_modules(item))
+
+    return modules
+
+class Parameter(Tensor):
+    """A trainable Tensor.\n
+    
+    Represents trainable parameters such as weights and biases.\n
+    Always participates in gradient computations
+
+    Args:
+        Tensor (Tensor): Input tensor to convert to a parameter
+    """
+    def __init__(self, data: Tensor):
+        assert isinstance(data, Tensor), 'Data must be an instance of Tensor.'
+        super().__init__(data.data, requires_grad=True)
+        
+    def zero_grad(self):
+        if self.grad is not None:
+            self.grad = np.zeros_like(self.data)
+            
+    def detach(self):
+        raise RuntimeError(
+            'Cannot detach a Parameter from the computational graph.',
+            'Convert to Tensor if intentional'
+        )
+        
+    def __repr__(self) -> str:
+        return (
+            f'Parameter(Tensor(data={self.data}), \n'
+            f'shape={self.shape}, \n'
+            f'requires_grad={self.requires_grad}'
+                )
+
+
 class Layer:
     """Base class for all layers in the neural network.
     
@@ -26,6 +76,19 @@ class Layer:
         parameters(): Returns the parameters of the layer.
         The __call__ method is provided to allow instances of Layer to be called like functions.
     """
+    def __init__(self) -> None:
+        self.training =True
+        
+    def eval(self):
+        self.training = False
+        for module in _get_modules(self):
+            module.training = False
+        
+    def train(self):
+        self.training = True
+        for module in _get_modules(self):
+            module.training = True
+        
     
     def forward(self, input: Tensor) -> Tensor:
         """Forward pass throught the layer.
@@ -51,13 +114,34 @@ class Layer:
         """
         return self.forward(input, *args, **kwds)
     
-    def parameters(self) -> list[Tensor]:
+    def parameters(self) -> list[Parameter]:
         """Returns the parameters of the layer.
         
         Returns:
             list[Tensor]: A list of tensors representing the parameters of the layer.
         """
-        return [] #* Base layer has no parameters
+        params = []
+
+        for value in self.__dict__.values():
+
+            if isinstance(value, Parameter):
+                params.append(value)
+
+            elif isinstance(value, Layer):
+                params.extend(value.parameters())
+
+            elif isinstance(value, (list, tuple)):
+                for item in value:
+                    if isinstance(item, Parameter):
+                        params.append(item)
+                    elif isinstance(item, Layer):
+                        params.extend(item.parameters())
+
+        return params
+    
+    def zero_grad(self):
+        for p in self.parameters():
+            p.zero_grad()
     
     def __repr__(self) -> str:
         """String representation of the layer."""
@@ -81,24 +165,29 @@ class Linear(Layer):
     Args:
         in_features (int): Number of input features.
         out_features (int): Number of output features.
+        
+    Attributes:
+        weight (Parameter): The learnable weights of the module of shape
+                            `(in_features, out_features)`.
+        bias (Parameter):   The learnable bias of the module
+                            of shape `(out_features,)`.
     
     Methods:
         forward(input): Computes the forward pass of the linear layer.
         parameters(): Returns the parameters of the linear layer.
     """
     
-    def __init__(self, in_features: int, out_features: int, bias:bool=False) -> None:
+    def __init__(self, in_features: int, out_features: int, bias=False) -> None:
         self.in_features = in_features
         self.out_features = out_features
         
         #* Xavier initialization for stable gradients
         scale = (XAVIER_SCALE_FACTOR / in_features) ** 0.5
-        weight_data = np.random.randn(out_features, in_features) * scale
-        self.weight = Tensor(weight_data, requires_grad=True)
+        self.weight = Parameter(
+            Tensor(np.random.randn(out_features, in_features) * scale))
         
         if bias == True:
-            bias_data = np.zeros(out_features)
-            self.bias = Tensor(bias_data, requires_grad=True)
+            self.bias = Parameter(Tensor(np.zeros(out_features)))
             
         else:
             self.bias = None
@@ -123,27 +212,30 @@ class Linear(Layer):
         Returns:
             list[Tensor]: A list containing the weight and bias tensors.
         """
-        parameters = [self.weight]
-        if self.bias is not None:
-            parameters.append(self.bias)
-        return parameters
-
+        # parameters = [self.weight]
+        # if self.bias is not None:
+        #     parameters.append(self.bias)
+        # return parameters
+        return super().parameters()
+    
     def __repr__(self) -> str:
         """String representation of the linear layer."""
         bias_str = ", bias=True" if self.bias is not None else ""
-        return f"Linear(in_features={self.in_features}, out_features={self.out_features}{bias_str})"
+        return (f"Linear(in_features={self.in_features}, "
+                f"out_features={self.out_features}{bias_str}")
     
 class Dropout(Layer):
     """Initialize dropout layer.
     Args:
         p (float): Probability of dropping a unit. Must be in the range [0.0, 1.0).
     """
-    def __init__(self, p: float) -> None:
+    def __init__(self, p: float, training: bool=False) -> None:
         if not (DROPOUT_MIN_PROB <= p < DROPOUT_MAX_PROB):
             raise ValueError(f"Dropout probability must be in the range [{DROPOUT_MIN_PROB}, {DROPOUT_MAX_PROB}), got {p}.")
         self.p = p
+        self.training = training
         
-    def forward(self, input: Tensor, training: bool=False) -> Tensor:
+    def forward(self, input: Tensor) -> Tensor:
         """Forward pass through the dropout layer.
         
         During training, randomly sets a fraction p of inputs to zero.
@@ -161,7 +253,7 @@ class Dropout(Layer):
         """
             
         #* during evaluation or no dropout, return input unchanged
-        if not training or self.p == DROPOUT_MIN_PROB:
+        if not self.training or self.p == DROPOUT_MIN_PROB:
             return input
         
         if self.p == DROPOUT_MAX_PROB:
@@ -178,6 +270,9 @@ class Dropout(Layer):
         output.requires_grad = input.requires_grad
         return output
     
+    def __call__(self, input: Tensor) -> Tensor:
+        return self.forward(input)
+    
     def parameters(self) -> list[Tensor]:
         return super().parameters()
     
@@ -193,7 +288,7 @@ class Sequential:
         layers (list[Layer]): A list of Layer instances to be chained together.
     
     """
-    def __init__(self, *layers: Tuple[list[Layer]]):
+    def __init__(self, *layers: Tuple[Layer] | list[Layer]):
         """Initialize the Sequential container with a list of layers.
         Accepts both (layer1, layer2, ...) and ([layer1, layer2, ...]) formats.
         """
@@ -212,7 +307,7 @@ class Sequential:
         """Allows the Sequential container to be called like a function."""
         return self.forward(input)
     
-    def parameters(self) -> list[Tensor]:
+    def parameters(self) -> list[Parameter]:
         """Returns the parameters of all layers in the Sequential container."""
         params = []
         for layer in self.layers:
@@ -224,7 +319,19 @@ class Sequential:
         return f"Sequential(\n  {layers_repr}\n)"
     
     
-
+class Residual(Layer):
+    def __init__(self, fn: Layer) -> None:
+        super().__init__()
+        self.fn = fn
+        
+    def forward(self, X: Tensor) -> Tensor:
+        return self.fn(X) + X
+    
+    def __repr__(self) -> str:
+        return f"Residual({self.fn})"
+    
+    def __call__(self, input: Tensor) -> Tensor:
+        return self.forward(input)
     
 
     
