@@ -13,6 +13,7 @@ from numpy.typing import NDArray
 MB_TO_BYTES = 1024 * 1024
 BYTES_PER_FLOAT32 = 4
 
+
 def unbroadcast(grad, shape):
     """
     Sum grad so that it matches target_shape.
@@ -162,7 +163,6 @@ class Tensor:
         
         def _backward():
             if self.requires_grad:
-                print(self, self.shape,result.grad * other.data, (result.grad * other.data).shape)
                 self._add_grad(other.data * result.grad)
                 
             if other.requires_grad:
@@ -494,14 +494,15 @@ class Tensor:
         for node in reversed(topo):
             node._backward()
             
-    def _add_grad(self, grad):
+    def _add_grad(self, grad: Tensor)->Tensor:
+        """Accumulate the gradients"""
         if not self.requires_grad:
             return 
         
         if self.grad is None:
             self.grad = np.zeros_like(self.data, dtype=np.float32)
             
-        # print(self.grad.shape, grad.shape)
+        grad = unbroadcast(grad, self.shape)
         self.grad += grad
         
     #* ============ ACTIVATIONS ===============
