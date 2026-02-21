@@ -41,7 +41,7 @@ class Tensor:
     """
     def __init__(
         self,
-        data: Union[NDArray, List[int|float], int, float],
+        data: NDArray[int, float],
         requires_grad: bool =False,
         _parents=()
         ) -> None:
