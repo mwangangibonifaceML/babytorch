@@ -55,10 +55,30 @@ class Tensor:
             self.data = data
         
         if self.data.dtype == object:
-            raise ValueError(
-                f'Tensor cannot wrap object arrays.'
-                'You likely created a NumPy array of Tensor objects.'
+            # raise ValueError(
+            #     f'Tensor cannot wrap object arrays.'
+            #     'You likely created a NumPy array of Tensor objects.'
+            # )
+            flat = self.data.flatten()
+            
+            if not all(isinstance(x, Tensor) for x in flat):
+                raise ValueError(
+                    'Object array contains non-Tensor objects.'
+                    
+                )
+                
+            # extract raw data
+            extracted = [x.data for x in flat]
+            
+            # Stack back into original shape
+            new_data = np.stack(extracted).reshape(
+                self.data.shape + flat[0].data.shape
             )
+            
+            # Update self.data
+            self.data = new_data
+            self.requires_grad = any(x.requires_grad for x in flat)
+            self._parents = tuple(flat)
             
         self.shape = self.data.shape        #* Tuple[int, ...], look at the shape attribute of numpy arrays
         self.size = self.data.size          #* Int, look at the number of elements in numpy arrays
@@ -142,6 +162,7 @@ class Tensor:
         
         def _backward():
             if self.requires_grad:
+                print(self, self.shape,result.grad * other.data, (result.grad * other.data).shape)
                 self._add_grad(other.data * result.grad)
                 
             if other.requires_grad:

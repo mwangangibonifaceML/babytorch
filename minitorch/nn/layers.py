@@ -203,10 +203,9 @@ class Linear(Layer):
             Tensor: The output tensor of shape (batch_size, out_features).
         """
         if self.bias is None:
-            return input.matmul(self.weight.transpose())
+            return input @ self.weight.transpose()
         else:
-            product = input.matmul(self.weight.transpose())
-            return product + self.bias
+            return input @ self.weight.transpose() + self.bias
     
     def parameters(self) -> list[Tensor]:
         """Returns the parameters of the linear layer.
