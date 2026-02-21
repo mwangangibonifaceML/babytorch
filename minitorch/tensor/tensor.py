@@ -54,11 +54,11 @@ class Tensor:
         else:
             self.data = data
         
-        # if self.data.dtype == object:
-        #     raise ValueError(
-        #         f'Tensor cannot wrap object arrays.'
-        #         'You likely created a NumPy array of Tensor objects.'
-        #     )
+        if self.data.dtype == object:
+            raise ValueError(
+                f'Tensor cannot wrap object arrays.'
+                'You likely created a NumPy array of Tensor objects.'
+            )
             
         self.shape = self.data.shape        #* Tuple[int, ...], look at the shape attribute of numpy arrays
         self.size = self.data.size          #* Int, look at the number of elements in numpy arrays
@@ -420,18 +420,34 @@ class Tensor:
                 axes[-2], axes[-1] = axes[-1], axes[-2]
                 transposed_data = np.transpose(self.data, axes)
         else:
+            if dim0 is None or dim1 is None:
+                raise ValueError('Both dim1 and dim1 must be provided')
+            if dim0 < 0 or dim1 < 0:
+                raise ValueError('Dimensions must be non-negative')
+            if dim0 >= len(self.shape) or dim1 >= len(self.shape):
+                raise ValueError('Dimensions must be within the tensor shape')
+            if dim0 == dim1:
+                raise ValueError('Dimensions must be different')
+            
             axes = list(range(len(self.shape)))
             axes[dim0], axes[dim1] = axes[dim1], axes[dim0]
             transposed_data = np.transpose(self.data, axes)
+            
         result = Tensor(transposed_data, requires_grad=self.requires_grad, _parents=(self,))
         
         def _backward():
-            if self.requires_grad:
-                if dim0 is None and dim1 is None:
-                    
-                    grad =result.transpose()
-                else:
-                    grad = result.transpose(dim0, dim1)
+            if not self.requires_grad:
+                return
+            if result.grad is None:
+                return 
+                
+            # transpose gradient back
+            grad_input = np.transpose(result.grad, axes)
+
+            if self.grad is None:
+                self.grad = grad_input
+            else:
+                self._add_grad(grad_input)
         
         result._backward = _backward
         return result
