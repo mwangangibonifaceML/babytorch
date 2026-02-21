@@ -14,6 +14,7 @@ DROPOUT_MIN_PROB = 0.0 # drop nothing
 DROPOUT_MAX_PROB = 1.0 # drop everything
 
 TOLERANCE = 1e-3 # numerical tolerance for floating point comparisons
+EPSILON = 1e-5 # layer norm epsilon to shift the standard deviation
 
 def _get_modules(obj) -> list['Module']:
     """
@@ -204,7 +205,8 @@ class Linear(Layer):
         if self.bias is None:
             return input.matmul(self.weight.transpose())
         else:
-            return input.matmul(self.weight.transpose()) + self.bias
+            product = input.matmul(self.weight.transpose())
+            return product + self.bias
     
     def parameters(self) -> list[Tensor]:
         """Returns the parameters of the linear layer.
@@ -213,7 +215,7 @@ class Linear(Layer):
             list[Tensor]: A list containing the weight and bias tensors.
         """
         # parameters = [self.weight]
-        # if self.bias is not None:
+        # if self.bias is not None:   
         #     parameters.append(self.bias)
         # return parameters
         return super().parameters()
@@ -222,7 +224,7 @@ class Linear(Layer):
         """String representation of the linear layer."""
         bias_str = ", bias=True" if self.bias is not None else ""
         return (f"Linear(in_features={self.in_features}, "
-                f"out_features={self.out_features}{bias_str}")
+                f"out_features={self.out_features}{bias_str})")
     
 class Dropout(Layer):
     """Initialize dropout layer.
@@ -265,9 +267,8 @@ class Dropout(Layer):
         
         #* apply mask and scale to preserve gradients
         mask_tensor = Tensor(mask.astype(np.float32), requires_grad=False)
-        scale = Tensor(np.array(1.0 / keep_prob), requires_grad=False)
-        output = input * mask_tensor * scale
-        output.requires_grad = input.requires_grad
+        scale = 1.0 / keep_prob
+        output = (input * mask_tensor) * scale
         return output
     
     def __call__(self, input: Tensor) -> Tensor:
@@ -334,6 +335,110 @@ class Residual(Layer):
         return self.forward(input)
     
 
+class LayerNormalization(Layer):
+    """
+    Normalizes across the last dimension of the input tensor
+    """
+    def __init__(self, num_features: int, eps: float= EPSILON) -> None:
+        super().__init__()
+        if not isinstance(num_features, int) or num_features <= 0:
+            raise ValueError(
+                f"num_features must be a positive integer, got {num_features}"
+            )
+            
+        self.dim = num_features
+        self.eps = eps
+        self.weight = Parameter(Tensor(np.ones(shape=self.dim)))
+        self.bias = Parameter(Tensor(np.zeros(shape=self.dim)))
+        
+    def forward(self, X: Tensor) -> Tensor:
+        assert X.shape[-1] == self.dim,\
+            f'last dim of input should equal dim, received: {X.shape[1]} expected: {self.dim}'
+            
+        mean = X.mean(axis=-1, keepdims=True)
+        var = X.var(axis=-1, keepdims=True)
+        norm = (X - mean) / ((var + self.eps) ** 0.5)
+        shifted_norm = self.weight * norm + self.bias
+        return shifted_norm
+    
+    def __call__(self, input: Tensor, ) -> Tensor:
+        return self.forward(input)
+    
+class BatchNormalization(Layer):
+    """
+    Normalizes across the first dimension. 
+    
+    Supports 2D inputs of shape (batch_size, num_features)
+    """
+    def __init__(
+        self,
+        num_features: int,
+        eps: float = EPSILON,
+        momentum: float = 0.1
+        ) -> None:
+        
+        super().__init__()
+        if not isinstance(num_features, int) or num_features <= 0:
+            raise ValueError(
+                f"num_features must be a positive integer, got {num_features}"
+            )
+            
+        self.dim = num_features
+        self.eps = eps
+        self.momentum = momentum
+        
+        #* learnable parameters
+        self.weight = Parameter(Tensor(np.ones(shape=self.dim)))
+        self.bias = Parameter(Tensor(np.zeros(shape=self.dim)))
+        
+        #* running mean and var (statistics not learnable)
+        self.running_mean = Tensor(np.zeros(shape=self.dim))
+        self.running_var = Tensor(np.ones(shape=self.dim))
+    
+    def forward(self, X: Tensor) -> Tensor:
+        assert len(X.shape) == 2, \
+            f'Batch Normalization only supports 2D inputs (N,C), got shape {X.shape}'
+        
+        if X.shape[1] != self.dim:
+            raise ValueError(
+                f"Expected: {self.dim} features, got: {X.shape[1]}"
+            )
+            
+        if self.training:
+            batch_mean = X.mean(axis=0, keepdims=True)
+            batch_var = X.var(axis=0, keepdims=True)
+            
+            #* update running statistics
+            self.running_mean = (
+                (1 - self.momentum) * self.running_mean +
+                self.momentum * batch_mean.detach()
+            )
+            
+            self.running_var = (
+                (1 - self.momentum) * self.running_var + 
+                self.momentum * batch_var.detach()
+            )
+            mean = batch_mean
+            var = batch_var
+        else:
+            mean = self.running_mean
+            var = self.running_var
+        
+        x_hat = (X - mean) / ((var + self.eps) **0.5)
+        out = self.weight * x_hat + self.bias
+        return out
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
     
 
 def test_gradient_preparation_linear():

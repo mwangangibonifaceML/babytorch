@@ -27,7 +27,6 @@ def unbroadcast(grad, shape):
             grad = grad.sum(axis=i, keepdims=True)
     return grad
 
-
 #* Basic Tensor class
 class Tensor:
     """A tensor class that tries to mimick a pytorch tensor
@@ -45,10 +44,21 @@ class Tensor:
         requires_grad: bool =False,
         _parents=()
         ) -> None:
-        if not isinstance(data, np.ndarray):
+        # assert isinstance(data, (NDArray, float, int, Tensor))
+        
+        if isinstance(data, (float, int)):
             self.data = np.array(data)
+            
+        elif isinstance(data, Tensor):
+            self.data = data.data
         else:
             self.data = data
+        
+        # if self.data.dtype == object:
+        #     raise ValueError(
+        #         f'Tensor cannot wrap object arrays.'
+        #         'You likely created a NumPy array of Tensor objects.'
+        #     )
             
         self.shape = self.data.shape        #* Tuple[int, ...], look at the shape attribute of numpy arrays
         self.size = self.data.size          #* Int, look at the number of elements in numpy arrays
@@ -67,6 +77,15 @@ class Tensor:
     
     def __str__(self) -> str:
         return f"Tensor(data={self.data})"
+    
+    @staticmethod
+    def __ensure_tensor(x: Union[int, float, np.ndarray]) -> Tensor:
+        """Check whether an argument is a Tensor, if not
+        wrap it in Tensor class
+        """
+        if not isinstance(x, Tensor):
+            return Tensor(x)
+        return x
     
     def numpy(self)-> np.ndarray:
         """Return the underlying numpy array"""
@@ -94,8 +113,7 @@ class Tensor:
     def __add__(self, other)-> Tensor:
         """Add two tensors element-wise with broadcasting support
         """
-        if not isinstance(other, Tensor):
-            other = Tensor(other)
+        other = Tensor.__ensure_tensor(other)
         result = Tensor(self.data + other.data,
                     requires_grad= self._determine_gradient_requirement(other),
                     _parents= (self, other))
@@ -109,12 +127,16 @@ class Tensor:
                 
         result._backward = _backward
         return result
+    
+    def __radd__(self, other):
+        return self.__add__(other)
+    
         
     def __mul__(self, other)-> Tensor:
         """Multiply two tensors element-wise (NOT matrix multiplication)."""
-        if not isinstance(other, Tensor):
-            other = Tensor(other)
-        result = Tensor(self.data * other.data,
+        other = Tensor.__ensure_tensor(other)
+        result = Tensor(
+                    np.multiply(self.data , other.data),
                     requires_grad= self._determine_gradient_requirement(other),
                     _parents=(self,other))
         
@@ -127,6 +149,9 @@ class Tensor:
         
         result._backward = _backward
         return result
+    
+    def __rmul__(self, other)-> Tensor:
+        return self.__mul__(other)
         
     def __sub__(self, other)-> Tensor:
         """Subtract two tensors element-wise."""
@@ -296,46 +321,34 @@ class Tensor:
     
     def sum(self, axis=None, keepdims=False)-> Tensor:
         """Sum tensor along specified axis"""
-        result =  Tensor(np.array(np.sum(self.data, axis=axis, keepdims= keepdims)),
+        result =  Tensor(np.sum(self.data, axis=axis, keepdims= keepdims),
                     requires_grad= self.requires_grad, _parents=(self,))
         
         def _backward():
-            if self.requires_grad:
-                self._add_grad(np.ones_like(self.data) * result.grad)
+            if not self.requires_grad:
+                return
+
+            grad = result.grad
+
+            # If dimensions were removed, restore them
+            if axis is not None and not keepdims:
+                if isinstance(axis, int):
+                    axes = (axis,)
+                else:
+                    axes = axis
+
+                for ax in sorted(axes):
+                    grad = np.expand_dims(grad, ax)
+
+            # Broadcast to input shape
+            grad = np.broadcast_to(grad, self.shape)
+
+            self._add_grad(grad)
         
         result._backward = _backward
         return result
-    # def sum(self, axis=None, keepdims=False):
-    #     data = self.data.sum(axis=axis, keepdims=keepdims)
-    #     out = Tensor(data, requires_grad=self.requires_grad)
-
-    #     def _backward():
-    #         if not self.requires_grad:
-    #             return
-
-    #         grad = out.grad
-
-    #         # If dimensions were removed, reinsert them
-    #         if axis is not None and not keepdims:
-    #             if isinstance(axis, int):
-    #                 axes = (axis,)
-    #             else:
-    #                 axes = axis
-    #             for ax in sorted(axes):
-    #                 grad = np.expand_dims(grad, ax)
-
-    #         # Broadcast to input shape
-    #         grad = np.broadcast_to(grad, self.shape)
-
-    #         self._add_grad(grad)
-
-    #     if out.requires_grad:
-    #         out._backward = _backward
-
-    #     return out
-
     
-    def mean(self, axis=None, keepdims=False)-> Tensor:
+    def mean(self, axis: int=None, keepdims: bool =False)-> Tensor:
         """Sum tensor along specified axis"""
         result =  Tensor(np.array(np.mean(self.data, axis=axis, keepdims= keepdims)),
                     requires_grad= self.requires_grad, _parents=(self,))
@@ -345,29 +358,19 @@ class Tensor:
                 self._add_grad(result.grad / self.data.size)
         result._backward = _backward
         return result
-    # def mean(self, axis=None, keepdims=False):
-    #     if axis is None:
-    #         denom = self.data.size
-    #     else:
-    #         if isinstance(axis, int):
-    #             denom = self.data.shape[axis]
-    #         else:
-    #             denom = np.prod([self.data.shape[a] for a in axis])
-
-    #     out = self.sum(axis=axis, keepdims=keepdims)
-    #     out.data = out.data / denom
-
-    #     if out.requires_grad:
-    #         prev_backward = out._backward
-
-    #         def _backward():
-    #             prev_backward()
-    #             self.grad /= denom
-
-    #         out._backward = _backward
-
-    #     return out
-
+    
+    def var(self, axis: int=None, keepdims: bool= False)-> Tensor:
+        result = Tensor(
+            np.array(np.var(self.data, axis=axis, keepdims=keepdims, ddof=1)),
+            requires_grad=self.requires_grad, 
+            _parents=(self,))
+        
+        def _backward():
+            if self.requires_grad:
+                self._add_grad(result.grad / self.data.size)
+        result._backward = _backward
+        return result      
+    
     def max(self, axis:Optional[int]=None, keepdims=False) -> Tensor:
         """Find the max value of a tensor along specified axis"""
         return Tensor(np.array(np.max(self.data, axis=axis, keepdims=keepdims)),
@@ -411,14 +414,12 @@ class Tensor:
         ### BEGIN SOLUTION
         if dim0 is None and dim1 is None:
             if len(self.shape) < 2:
-                return Tensor(self.data.copy())
+                transposed_data = self.data.copy()
             else:
                 axes = list(range(len(self.shape)))
                 axes[-2], axes[-1] = axes[-1], axes[-2]
                 transposed_data = np.transpose(self.data, axes)
         else:
-            if dim0 is None or dim1 is None:
-                raise ValueError("Both dim0 and dim1 must be specified")
             axes = list(range(len(self.shape)))
             axes[dim0], axes[dim1] = axes[dim1], axes[dim0]
             transposed_data = np.transpose(self.data, axes)
@@ -426,7 +427,11 @@ class Tensor:
         
         def _backward():
             if self.requires_grad:
-                self._add_grad(result.grad.transpose(dim0, dim1))
+                if dim0 is None and dim1 is None:
+                    
+                    grad =result.transpose()
+                else:
+                    grad = result.transpose(dim0, dim1)
         
         result._backward = _backward
         return result
