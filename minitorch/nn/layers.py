@@ -231,7 +231,7 @@ class Dropout(Layer):
         p (float): Probability of dropping a unit. Must be in the range [0.0, 1.0).
     """
     def __init__(self, p: float, training: bool=False) -> None:
-        if not (DROPOUT_MIN_PROB <= p < DROPOUT_MAX_PROB):
+        if not (DROPOUT_MIN_PROB <= p <= DROPOUT_MAX_PROB):
             raise ValueError(f"Dropout probability must be in the range [{DROPOUT_MIN_PROB}, {DROPOUT_MAX_PROB}), got {p}.")
         self.p = p
         self.training = training
