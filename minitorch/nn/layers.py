@@ -213,10 +213,6 @@ class Linear(Layer):
         Returns:
             list[Tensor]: A list containing the weight and bias tensors.
         """
-        # parameters = [self.weight]
-        # if self.bias is not None:   
-        #     parameters.append(self.bias)
-        # return parameters
         return super().parameters()
     
     def __repr__(self) -> str:
@@ -427,7 +423,16 @@ class BatchNormalization(Layer):
         out = self.weight * x_hat + self.bias
         return out
     
+class Flatten:
+    def __init__(self)-> None:
+        pass 
     
+    def forward(self, input: Tensor) -> Tensor:
+        input_reshape = input.reshape(1,-1)
+        return input_reshape
+    
+    def __call__(self, input:Tensor) -> Any:
+        return self.forward(input)
     
     
     

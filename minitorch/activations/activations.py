@@ -42,7 +42,7 @@ class Sigmoid:
         #* Apply sigmoid: 1 / (1 + (-X).exp())
         #* clip extreme values to prevent overflows (sigmoid(-500) ~ 0, sigmoid(500) ~ 1)
         #* clipping at -500 and 500 ensures that exp(-x) stays within float64 range
-        clipped_X = np.clip(X.data, -500, 500)
+        clipped_X = np.clip(X.data, -15,15)
         
         #* Use numerical stable sigmoid formula
         #* for positive numbers: 1 / (1 + exp(-x))
@@ -51,14 +51,14 @@ class Sigmoid:
         results = np.zeros_like(clipped_X)
         
         #* For positive numbers
-        positive_mask = clipped_X >= 0
+        positive_mask = clipped_X > 0
         z = np.exp(-clipped_X[positive_mask])
-        results[positive_mask] = 1 / (1 + z)
+        results[positive_mask] += 1 / (1 + z)
         
         #* For negative numbers
-        negative_mask = clipped_X < 0
+        negative_mask = clipped_X <= 0
         z = np.exp(clipped_X[negative_mask])
-        results[negative_mask] = z / (1 + z)
+        results[negative_mask] += z / (1 + z)
         
         results = Tensor(results, requires_grad=X.requires_grad, _parents=(X,))
         
