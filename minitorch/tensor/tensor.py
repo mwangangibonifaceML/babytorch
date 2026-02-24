@@ -83,7 +83,7 @@ class Tensor:
             
         self.shape = self.data.shape        #* Tuple[int, ...], look at the shape attribute of numpy arrays
         self.size = self.data.size          #* Int, look at the number of elements in numpy arrays
-        self.dtype = self.data.dtype        #* Data type of the underlying numpy array
+        self.dtype = 'float32'       #* Data type of the underlying numpy array
         self.requires_grad = requires_grad  #* The trigger for gradient computation (dormant feature)
         
         self.grad = np.zeros_like(
@@ -268,62 +268,6 @@ class Tensor:
         result._backward = _backward
         return result
     
-    # def matmul(self, other)-> Tensor:
-    #     """Matrix multiplication for two tensors"""
-    #     other = other if isinstance(other, Tensor) else Tensor(other)
-        
-    #     if self.data.ndim == 0 or other.data.ndim == 0:
-    #         result = Tensor(self.data * other.data, 
-    #                     requires_grad= self._determine_gradient_requirement(other),
-    #                     _parents=(self, other))
-            
-    #     if len(self.shape) >= 2 and len(other.shape) >=2:
-    #         if self.shape[-1] != other.shape[-2]:
-    #             raise ValueError(
-    #                 f"Cannot perform matrix multiplication: {self.shape} @ {other.shape}, "
-    #                 f"Inner dimensions must match: {self.shape[-1] } ≠ {other.shape[-2]}"
-    #             )
-        
-    #     #* Below piece of code will me slower than np.matmul
-    #     #* Handle 2D|3D and so on matrices with explicit loops
-    #     # start with 2D
-    #     if len(self.shape) == 2 and len(other.shape) == 2:
-    #         M,_ = self.data.shape
-    #         _,N = other.data.shape
-    #         results_data = np.zeros((M,N), dtype= self.dtype)
-            
-            
-    #         #* Explicit loops
-    #         for row in range(M):
-    #             for col in range(N):
-    #                 results_data[row, col] = np.dot(self.data[row, :], other.data[:, col])
-            
-    #         result = Tensor(results_data,
-    #                     requires_grad=self._determine_gradient_requirement(other),
-    #                     _parents=(self,other))
-            
-    #     else: # 3D+ operations
-    #         results_data = np.matmul(self.data, other.data)
-            
-    #         result = Tensor(results_data,
-    #                         requires_grad=self._determine_gradient_requirement(other),
-    #                         _parents=(self,other))
-            
-    #     grad = result.grad
-        
-    #     def _backward():
-    #         if self.requires_grad:
-    #             print(self.shape,result.grad.shape, other.data.shape)
-    #             grad_self = np.matmul(grad_output, np.swapaxes(other.data, -1, -2))
-    #             self._add_grad(grad_self)
-                
-    #         if other.requires_grad:
-    #             print(other.shape, result.grad.shape, self.data.shape,)
-    #             grad_other = np.matmul(np.swapaxes(self.data, -1, -2), grad_output)
-    #             other._add_grad(grad_other)
-        
-    #     result._backward = _backward
-    #     return result
     def matmul(self, other) -> "Tensor":
         other = other if isinstance(other, Tensor) else Tensor(other)
 
@@ -388,7 +332,6 @@ class Tensor:
 
         result._backward = _backward
         return result
-
     
     def __getitem__(self, key):
         """Enable Tensor indexing and slicing"""

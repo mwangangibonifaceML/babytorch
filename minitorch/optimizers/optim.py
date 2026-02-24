@@ -18,6 +18,7 @@ So, what are optimizers:
         
 
 """
+
 import numpy as np
 from numpy.typing import NDArray
 from typing import List, Optional
@@ -72,11 +73,11 @@ class Optimizer:
         """Extract the gradient of the parameters passed to the optimizer"""
         gradient = []
         for param in self.params:
-            gradient.append(param.grad)
-            
+            gradient.append(param.grad.data)
         return gradient
     
     def zero_grad(self):
+        """Reset the gradients to zero"""
         for parameter in self.params:
             parameter.grad = np.zeros_like(parameter.data)
 
@@ -143,6 +144,8 @@ class SGD(Optimizer):
                 self.momentum_buffers[i] = buffer.copy()
                 
     def step(self):
+        """Perform Stochastic Gradient Descent to update the parameters"""
+        
         #* gradients for each parameter
         params_gradients = self._extract_grad_data()
         
@@ -168,10 +171,12 @@ class SGD(Optimizer):
                 grad_data = self.momentum_buffers[i]
                 
             #* update parameter: params = param - lr * grad_data
-            param.data -= self.learning_rate * grad_data
+            param.data = param.data - self.learning_rate * grad_data
             
         #* increament the counter
         self.step_count += 1
+        
+
         
         
         
