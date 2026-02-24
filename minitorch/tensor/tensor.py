@@ -503,6 +503,7 @@ class Tensor:
     def transpose(self, dim0=None, dim1=None):
         """Transpose tensor dimensions."""
         ### BEGIN SOLUTION
+        axis = None
         if dim0 is None and dim1 is None:
             if len(self.shape) < 2:
                 transposed_data = self.data.copy()
@@ -522,6 +523,7 @@ class Tensor:
             
             axes = list(range(len(self.shape)))
             axes[dim0], axes[dim1] = axes[dim1], axes[dim0]
+            axis = axes
             transposed_data = np.transpose(self.data, axes)
             
         result = Tensor(transposed_data, requires_grad=self.requires_grad, _parents=(self,))
@@ -533,7 +535,7 @@ class Tensor:
                 return 
                 
             # transpose gradient back
-            grad_input = np.transpose(result.grad, axes)
+            grad_input = np.transpose(result.grad, axis)
 
             if self.grad is None:
                 self.grad = grad_input

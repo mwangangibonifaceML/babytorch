@@ -72,7 +72,7 @@ class Optimizer:
         """Extract the gradient of the parameters passed to the optimizer"""
         gradient = []
         for param in self.params:
-            gradient.append(np.array(param.grad.data))
+            gradient.append(param.grad)
             
         return gradient
     
@@ -161,7 +161,7 @@ class SGD(Optimizer):
             #* update momentum buffers
             if self.momentum != 0:
                 if self.momentum_buffers[i] is None:
-                    self.momentum_buffers[i] = np.ones_like(param.data)
+                    self.momentum_buffers[i] = np.zeros_like(param.data)
                     
                 #* update momentum: v = momentum * v_prev + grad
                 self.momentum_buffers[i] = self.momentum * self.momentum_buffers[i] + grad_data 
