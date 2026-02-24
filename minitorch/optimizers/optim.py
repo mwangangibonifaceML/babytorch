@@ -73,7 +73,7 @@ class Optimizer:
         """Extract the gradient of the parameters passed to the optimizer"""
         gradient = []
         for param in self.params:
-            gradient.append(param.grad.data)
+            gradient.append(param.grad)
         return gradient
     
     def zero_grad(self):
@@ -144,18 +144,14 @@ class SGD(Optimizer):
                 self.momentum_buffers[i] = buffer.copy()
                 
     def step(self):
-        """Perform Stochastic Gradient Descent to update the parameters"""
-        
-        #* gradients for each parameter
-        params_gradients = self._extract_grad_data()
-        
+        """Perform Stochastic Gradient Descent to update the parameters"""    
         #* iterate through all the parameters and update them
         for i, param in enumerate(self.params):
             if param.grad is None:
                 continue
             
             #* extract the gradient for the current parameter
-            grad_data = params_gradients[i]
+            grad_data = np.array(param.grad.data)
             
             #* apply weight decay for the current parameter
             if self.weight_decay != 0:

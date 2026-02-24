@@ -524,6 +524,9 @@ class Tensor:
         if not self.requires_grad:
             return 
         
+        if isinstance(grad, Tensor):
+            grad = grad.data
+        
         if self.grad is None:
             self.grad = np.zeros_like(self.data, dtype=np.float32)
             
