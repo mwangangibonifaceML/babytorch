@@ -479,18 +479,28 @@ class Tensor:
     
     def backward(self):
         """Compute gradient"""
+        #* build an ordered list of all tensors involved(Topological order)
+        #* this ensures that when we call backward, we compute gradients in the correct order
         topo =[]
         visited = set()
         def build_graph(root):
             if not root in visited:
                 visited.add(root)
+                #* recursively visit parents first
                 for parent in root._parents:
                     build_graph(parent)
+            
+            #* add self after all parents are visited
             topo.append(root)
             
         build_graph(self)
             
+        #* initialize the gradient of the output tensor (self) to 1,
+        #* since d(output)/d(output) = 1
         self.grad = np.ones_like(self.data, dtype=np.float32)
+        
+        #* go through the topology in reverse order triggering
+        #* the backward function of each node
         for node in reversed(topo):
             node._backward()
             

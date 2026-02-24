@@ -115,23 +115,27 @@ class BinaryCrossEntropy(Loss):
     
     
     def __call__(self, prediction: Tensor, targets: Tensor) -> Tensor:
-        np_loss = self.forward(prediction, targets)
-        return Tensor(np_loss, requires_grad=True)
+        return self.forward(prediction, targets)
     
     def forward(self, prediction: Tensor, targets: Tensor) -> np.any:
         #* clip the predictions to avoid problems with log(0) and log(1)
         prediction_clipped = np.clip(prediction.data, EPSILON, 1 - EPSILON)
         
         #* calculate the binary cross entropy
-        log_predicted = np.log(prediction_clipped)
-        log_one_minus_predicted = np.log(1 - prediction_clipped)
-        one_minus_data = 1 - targets.data
-    
-        one_half = targets.data * log_predicted
-        second_half = one_minus_data * log_one_minus_predicted
-        bce_per_sample = -(one_half + second_half)
-        loss = Tensor(bce_per_sample, requires_grad=prediction.requires_grad,
+        #* bce_per_sample = -[y * log(p) + (1-y) * log(1-p)]
+        bce_per_sample = -(targets.data * np.log(prediction_clipped) +\
+        (1 - targets.data) * np.log(1 - prediction_clipped))
+        
+        loss = Tensor(bce_per_sample, 
+                    requires_grad=prediction.requires_grad,
                     _parents=(prediction))
         
+        def _backward():
+            if prediction.requires_grad:
+                prediction_grad = -(targets.data / prediction_clipped) -\   
+                ((1 - targets.data) / (1 - prediction_clipped))
+                prediction._add_grad(prediction_grad * loss.grad)
+            
+        loss._backward = _backward
         return loss
     
