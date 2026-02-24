@@ -18,6 +18,8 @@ So, what are optimizers:
         
 
 """
+import numpy as np
+from numpy.typing import NDArray
 from typing import List, Optional
 from minitorch.tensor.tensor import Tensor
 
@@ -65,12 +67,24 @@ class Optimizer:
             f"              if param.grad is not None:\n"
             f"                  param.data -= self.lr * param.grad.data"
         )
+        
+    def _extract_grad_data(self)-> List[NDArray]:
+        """Extract the gradient of the parameters passed to the optimizer"""
+        gradient = []
+        for param in self.params:
+            gradient.append(np.array(param.grad.data))
+            
+        return gradient
+    
+    def zero_grad(self):
+        for parameter in self.params:
+            parameter.grad = np.zeros_like(parameter.data)
 
 class SGD(Optimizer):
     def __init__(self,
                 params: List[Tensor],
                 lr: float= DEFAULT_LEARNING_RATE_SGD,
-                momentum: float=0.9,
+                momentum: float=0.0,
                 weight_decay: float= 0.0) -> None:
         super().__init__(params)
         self.learning_rate = lr
@@ -112,7 +126,7 @@ class SGD(Optimizer):
             state (Optional[List]): List of momentum buffers or None
         """
         
-        if state is None or  or self.has_momentum():
+        if state is None or self.has_momentum():
             return
         
         if len(state) != len(self.momentum_buffers):
@@ -128,4 +142,62 @@ class SGD(Optimizer):
             if buffer is not None:
                 self.momentum_buffers[i] = buffer.copy()
                 
-    
+    def step(self):
+        #* gradients for each parameter
+        params_gradients = self._extract_grad_data()
+        
+        #* iterate through all the parameters and update them
+        for i, param in enumerate(self.params):
+            if param.grad is None:
+                continue
+            
+            #* extract the gradient for the current parameter
+            grad_data = params_gradients[i]
+            
+            #* apply weight decay for the current parameter
+            if self.weight_decay != 0:
+                grad_data += self.weight_decay * param.data
+            
+            #* update momentum buffers
+            if self.momentum != 0:
+                if self.momentum_buffers[i] is None:
+                    self.momentum_buffers[i] = np.ones_like(param.data)
+                    
+                #* update momentum: v = momentum * v_prev + grad
+                self.momentum_buffers[i] = self.momentum * self.momentum_buffers[i] + grad_data 
+                grad_data = self.momentum_buffers[i]
+                
+            #* update parameter: params = param - lr * grad_data
+            param.data -= self.learning_rate * grad_data
+            
+        #* increament the counter
+        self.step_count += 1
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+####################### Tests #############################

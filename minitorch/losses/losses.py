@@ -63,16 +63,16 @@ class MSE(Loss):
         return loss
     
     def forward(self, predictions: Tensor, targets: Tensor) -> np.any:
-        diff = predictions.data - targets.data
-        error_squared = diff ** 2
-        error = Tensor(error_squared.mean(),
+        print(predictions.shape, targets.shape)
+        squared_error = np.mean((predictions.data - targets.data) ** 2)
+        error = Tensor(squared_error,
                     requires_grad=targets.requires_grad,
                     _parents=(predictions,))
         
         def _backward():
             
             if predictions.requires_grad:
-                mse_grad = (2/diff.size) * diff
+                mse_grad = (2 /predictions.data.size) * (predictions.data - targets.data)
                 predictions._add_grad(mse_grad * error.grad)
                 
         error._backward = _backward

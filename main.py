@@ -24,17 +24,16 @@ def main():
                     [1,2,-3,4,-5,7],
                     [1,2,-3,4,-5,7]], dtype=np.float32), requires_grad=True)
 
-    batch_size, in_features, out_features = x.shape[0], x.shape[1], x.shape[1]
-    l1 = Linear(in_features,        out_features,       bias=True)
-    l2 = Linear(out_features,       out_features * 2,   bias=True)
-    l3 = Linear(out_features * 2,   out_features,       bias=True)
-    model = Sequential([l1,l2,l3])
-    out = model(x)
+    # batch_size, in_features, out_features = x.shape[0], x.shape[1], x.shape[1]
+    # l1 = Linear(in_features,        out_features,       bias=True)
+    # l2 = Linear(out_features,       out_features * 2,   bias=True)
+    # l3 = Linear(out_features * 2,   out_features,       bias=True)
+    # model = Sequential([l1,l2,l3])
+    # out = model(x)
     
-    optimizer = SGD(model.parameters())
-    state = optimizer.get_momentum_state()
-
-    print(state)
+    # optimizer = SGD(model.parameters())
+    # optimizer.step()
+    
     
 if __name__ == "__main__":
     main()
