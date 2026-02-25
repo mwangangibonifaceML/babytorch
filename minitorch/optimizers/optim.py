@@ -21,7 +21,7 @@ So, what are optimizers:
 
 import numpy as np
 from numpy.typing import NDArray
-from typing import List, Optional
+from typing import List, Optional, Tuple
 from minitorch.tensor.tensor import Tensor
 
 #* constants for optimizer deafults
@@ -173,6 +173,77 @@ class SGD(Optimizer):
         self.step_count += 1
         
 
+class Adam(Optimizer):
+    def __init__(self,
+                params: List[Tensor],
+                betas: Tuple[int, int] = (DEFAULT_BETA1, DEFAULT_BETA2),
+                lr: float= DEFAULT_LEARNING_RATE_ADAM,
+                weight_decay: float = 0.0,
+                eps: float = DEFAULT_EPS) -> None:
+        super().__init__(params)
+        self.lr = lr
+        self.beta1, self.beat2 = betas[0], betas[1]
+        self.weight_decay = weight_decay
+        self.eps = eps
+        self.m_buffers = [None for _ in self.params]
+        self.v_buffers = [None for _ in self.params]
+        
+    def _update_moments(self, 
+                        i: int,
+                        gradient_data: np.ndarray
+                        )-> Tuple[np.ndarray, ...]:
+        """
+        Update first and second moment estimates with bias correction.
+        
+        Computes the exponential moving averages of the gradient (first moment)
+        and the squared gradient (second moment), then applies bias correction
+        to counteract the zero-initialization bias in early training steps.
+        """
+        #* initialize buffers if its the first time
+        if self.m_buffers[i] is None:
+            self.m_buffers[i] = np.zeros_like(gradient_data)
+            self.v_buffers[i] = np.zeros_like(gradient_data)
+            
+        #* update biased first and second moment estimate
+        self.m_buffers[i] = self.beta1 * self.m_buffers[i] + (1 - self.beta1) * gradient_data
+        self.v_buffers[i] = self.beat2 * self.v_buffers[i] + (1 - self.beat2) * (gradient_data ** 2)
+        
+        #* moments bias correction
+        m_bias_correction = 1 - self.beta1 ** self.step_count
+        v_bias_correction = 1- self.beat2 ** self.step_count
+        
+        #* bias corrected moments
+        m_hat = self.m_buffers[i] / m_bias_correction
+        v_hat = self.v_buffers[i] / v_bias_correction
+        
+        return m_hat, v_hat
+    
+    def step(self):
+        """Update the parameters using adaptive learning rate"""
+        #* increment the counter
+        self.step_count += 1
+        
+        #* iterate through all the parameters
+        for i, param in enumerate(self.params):
+            if param is None:
+                continue
+            
+            #* extract the gradient for the current parameter
+            grad_data = np.array(param.grad.data)
+            
+            #* perform weight decay if needed
+            if self.weight_decay != 0.0:
+                grad_data += self.weight_decay * param.data
+                
+            #* update moments
+            m_hat, v_hat = self._update_moments(i, grad_data)
+            
+            #* update the parameter
+            param.data -= self.lr * m_hat / (np.sqrt(v_hat) + self.eps)
+            
+            
+        
+        
         
         
         
