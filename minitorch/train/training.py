@@ -13,6 +13,9 @@ def clip_grad_norm(parameters: List[Tensor, ...], max_norm: float = DEFAULT_MAX_
     if param.grad is None:
         return 0.0
     
+    if not parameters:
+        return 0.0
+    
     #* gather all gradients from all the parameters
     total_gradients = 0.0
     for param in parameters:
@@ -27,6 +30,7 @@ def clip_grad_norm(parameters: List[Tensor, ...], max_norm: float = DEFAULT_MAX_
     #* get the global norm for all gradients
     total_norm = np.sqrt(total_gradients)
             
+    #* clipping the gradients if the total norm exceeds the max norm
     if total_norm > max_norm:
         clip_coeffient  = max_norm / total_norm
         
