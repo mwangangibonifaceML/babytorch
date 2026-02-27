@@ -9,7 +9,7 @@ DEFAULT_MIN_LR = 0.01
 DEFAULT_TOTAL_EPOCHS = 100
 DEFAULT_MAX_NORM = 1.0
 
-def clip_grad_norm(parameters: List[Tensor, ...], max_norm: float = DEFAULT_MAX_NORM) -> float:
+def clip_grad_norm(parameters: List[Tensor], max_norm: float = DEFAULT_MAX_NORM) -> float:
     """Clips the gradients of the given parameters to a specified maximum norm.
     This function calculates the total norm of the gradients across all
     parameters and scales them down if the total norm exceeds the specified maximum.
@@ -24,12 +24,12 @@ def clip_grad_norm(parameters: List[Tensor, ...], max_norm: float = DEFAULT_MAX_
     if not parameters:
         return 0.0
     
-    if param.grad is None:
-        return 0.0
-    
     #* gather all gradients from all the parameters
     total_gradients = 0.0
     for param in parameters:
+        if  param.grad is None:
+            continue
+        
         if isinstance(param.grad, np.ndarray):
             grad = param.grad
         else:
