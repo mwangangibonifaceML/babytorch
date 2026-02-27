@@ -11,8 +11,8 @@ class CosineSchedule:
     Cosine annealing learning rate schedule
     
     Starts at max learning rate then decreases following a cosine curve to minimum learning rate
-    over a number of epochs. This provides aggressive learning rate initially, then fine-tuning
-    at the end
+    over a number of epochs. This provides aggressive learning rate initially, then slows down
+    to allow fine-tuning as training progresses.
     """
     def __init__(self, 
                 max_lr: float = DEFAULT_MAX_LR,
@@ -32,7 +32,7 @@ class CosineSchedule:
         Returns:
             float: the cosine annealing factor
         """
-        return (1+ np.cos(np.pi * epoch / self.total_epochs)) / 2
+        return (1 + np.cos(np.pi * epoch / self.total_epochs)) / 2
         
     def get_lr(self, epoch):
         """
@@ -52,8 +52,3 @@ class CosineSchedule:
     
     
     
-scheduler = CosineSchedule()
-lr_1 = scheduler.get_lr(1)
-lr_50 = scheduler.get_lr(50)
-lr_100 = scheduler.get_lr(100)
-print(lr_1, lr_50, lr_100)
