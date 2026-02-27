@@ -1,7 +1,10 @@
 import numpy as np
 
-from typing import List
+from typing import List, Callable, Optional, Iterable
 from minitorch.tensor.tensor import Tensor
+from minitorch.optimizers.optim import Optimizer
+from minitorch.losses.losses import Loss
+from minitorch.nn.layers import Layer
 
 #* define some constants
 DEFAULT_MAX_LR = 0.1
@@ -97,7 +100,120 @@ class CosineSchedule:
         lr = self.min_lr + (self.max_lr - self.min_lr) * cosine_factor
         return lr
     
+class Trainer:
+    def __init__(self,model, loss_fn, optimizer,scheduler: CosineSchedule | None = None, clip_gradients = True) -> None:
+        self.model = model
+        self.loss_fn = loss_fn
+        self.optimizer = optimizer
+        self.scheduler = scheduler
+        self.clip_gradients = clip_gradients
+        
+        #* training state
+        self.epoch = 0
+        self.step = 0
+        self.training_mode = True
+        
+        #* Histrory tracking
+        self.history = {
+            'train_loss' : [],
+            'eval_loss' : [],
+            'learning_rates': []
+        }
     
     
-    
-    
+    def train_epoch(self, dataloader: Iterable, accumulation_steps: int =1) -> float:
+        """
+        Train for one epoch
+
+        Args:
+            dataloader (Iterable): Iterable yielding input, targets pairs in batches
+            accumulation_step (int, optional): Number of batches to accumulate before update. Defaults to 1.
+        
+        Returns:
+            Average loss for the epoch (float)
+        """
+        ################ STEPS ####################
+        #* 1. set model to training = True and training_mode = True.
+        #* 2. Loop over batches, calling _process_batch over each.
+        #* 3. Every accumulation_steps batches, call _optimizer_update.
+        #* 4. Handle remaining accumulated gradients after the loop.
+        #* 5. Record average loss, update scheduler, increment epoch.
+        
+        #* STEP 1
+        self.model.training = True
+        self.training_mode = True
+        
+        #* STEP 2
+        accumulated_loss = 0.0
+        total_loss = 0.0
+        num_batches = 0
+        
+        for i, (inputs, targets) in enumerate(dataloader):
+            #* process the batch
+            accumulated_loss += self._process_batch(inputs, targets, accumulation_steps)
+            
+            #* update parameters every accumulation step
+            if (i + 1) % accumulation_steps == 0:
+                self._optimizer_update()
+                total_loss += accumulated_loss
+                accumulated_loss = 0.0
+                num_batches += 1
+                self.step += 1
+            
+        #* STEP 4
+        if accumulated_loss > 0:
+            self._optimizer_update()
+            total_loss += accumulated_loss
+            num_batches += 1
+        
+        #* STEP 5
+        # record the average loss
+        average_loss = total_loss/ num_batches
+        self.history['train_loss'].append(average_loss)
+        
+        # update the scheduler
+        if self.scheduler is not None:
+            learning_rate = self.scheduler.get_lr(self.epoch)
+            self.optimizer.lr = learning_rate
+            self.history['learning_rates'].append(learning_rate.item())
+            
+        # increment epochs
+        self.epoch += 1
+        return average_loss
+        
+        
+    def _process_batch(self, inputs: Tensor, targets: Tensor, accumulation_steps:int)-> float:
+        """
+        Process a single batch by doing a forward pass, compute loss and backward pass on it.
+        
+        Args:
+            inputs: Input tensor for this batch
+            targets: Target tensor for this batch
+            accumulation_step: Number of batches per optimizer update (for scaling)
+
+        Returns:
+            Scaled loss value (float) for accumulation tracking
+        """
+        #* forward pass
+        predictions = self.model(inputs)
+        loss = self.loss_fn(predictions, targets)
+        
+        #* compute scaled loss for accumulation
+        scaled_loss = loss.data / accumulation_steps
+        
+        #* backward pass
+        scaled_gradient = np.ones_like(loss.data) / accumulation_steps
+        loss.backward()
+        
+        return float(scaled_loss)
+
+    def _optimizer_update(self):
+        """
+        Clip gradients if enabled and step the optimizer.
+        """
+        if self.clip_gradients:
+            params = self.model.parameters()
+            clip_grad_norm(params)
+            
+        self.optimizer.step()
+        self.optimizer.zero_grad()

@@ -88,7 +88,7 @@ class SGD(Optimizer):
                 momentum: float=0.0,
                 weight_decay: float= 0.0) -> None:
         super().__init__(params)
-        self.learning_rate = lr
+        self.lr = lr
         self.momentum = momentum
         self.weight_decay = weight_decay
         self.momentum_buffers = [None for _ in self.params]
