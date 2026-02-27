@@ -67,7 +67,7 @@ class TensorDataset(Dataset):
     def __getitem__(self, index: int) -> Tuple[Tensor, Tensor]:
         if index >= len(self) or index < 0:
             raise IndexError(f"Index {index} out of range for dataset of size {len(self)}")
-        return tuple(tensor[index] for tensor in self.tensors[0])
+        return tuple(tensor[index] for tensor in self.tensors)
     
     
 class DataLoader:

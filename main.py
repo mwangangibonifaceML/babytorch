@@ -21,7 +21,7 @@ x = Tensor(np.array([[2.0, 3.0, 4.6,7.0],
                     [5.6,7.0, 11.9,12.0]]), requires_grad=True)
 y = Tensor(np.array([1.0, 2.0, 3.0, 3.0, 4.0,5.0]), requires_grad=True)
 
-ds = TensorDataset([x,y])
+ds = TensorDataset(x,y)
 dataloader = DataLoader(ds, batch_size=2, shuffle=True)
 
 
