@@ -167,7 +167,7 @@ class SGD(Optimizer):
                 grad_data = self.momentum_buffers[i]
                 
             #* update parameter: params = param - lr * grad_data
-            param.data = param.data - self.learning_rate * grad_data
+            param.data = param.data - self.lr * grad_data
             
         #* increament the counter
         self.step_count += 1

@@ -55,7 +55,7 @@ def clip_grad_norm(parameters: List[Tensor], max_norm: float = DEFAULT_MAX_NORM)
                 else:
                     param.grad.data *= clip_coeffient
     
-    return total_norm
+    return float(total_norm)
 
 
 class CosineSchedule:
@@ -69,10 +69,10 @@ class CosineSchedule:
     def __init__(self, 
                 max_lr: float = DEFAULT_MAX_LR,
                 min_lr : float = DEFAULT_MIN_LR,
-                tota_epochs: int = DEFAULT_TOTAL_EPOCHS) -> None:
+                total_epochs: int = DEFAULT_TOTAL_EPOCHS) -> None:
         self.max_lr = max_lr
         self.min_lr = min_lr
-        self.total_epochs = tota_epochs
+        self.total_epochs = total_epochs
         
     def _get_cosine_factor(self, epoch: int)-> float:
         """
@@ -202,7 +202,6 @@ class Trainer:
         scaled_loss = loss.data / accumulation_steps
         
         #* backward pass
-        scaled_gradient = np.ones_like(loss.data) / accumulation_steps
         loss.backward()
         
         return float(scaled_loss)
@@ -217,3 +216,42 @@ class Trainer:
             
         self.optimizer.step()
         self.optimizer.zero_grad()
+        
+    def _get_scheduler_state(self):
+        if self.scheduler is None:
+            return None
+        return {
+            'max_lr': self.scheduler.max_lr,
+            'min_lr': self.scheduler.min_lr,
+            'total_epochs': self.scheduler.total_epochs
+        }
+        
+    def _set_scheduler_state(self, state):
+        """Restore scheduler state from checkpoint."""
+        if state is None or self.scheduler is None:
+            return
+        for key, value in state.items():
+            if hasattr(self.scheduler, key):
+                setattr(self.scheduler, key, value)
+
+    def _get_optimizer_state(self):
+        state = {}
+        state{'lr'} = self.optimizer.lr
+        
+        if hasattr(self.optimizer, 'has_momentum') and self.optimizer.has_momentum():
+            momentum_state = self.optimizer.get_momentum_state()
+            if momentum_state is not None:
+                state{'momentum_state'} = momentum_state
+                
+        if hasattr(self.optimizer, 'weight_decay'):
+            state{'weight_decay'} = self.optimizer.weight_decay
+        
+        return state
+    
+    def _set_optimizer_state(self, state):
+        """Restore optimizer state from checkpoint."""
+        if 'lr' in state:
+            self.optimizer.lr = state['lr']
+        if 'momentum_buffers' in state:
+            if hasattr(self.optimizer, 'has_momentum') and self.optimizer.has_momentum():
+                self.optimizer.set_momentum_state(state['momentum_buffers'])
