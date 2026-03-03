@@ -71,7 +71,8 @@ class MSE(Loss):
         
         def _backward():
             if predictions.requires_grad:
-                mse_grad = (2 /predictions.data.size) * (
+                N = predictions.data.shape[0]
+                mse_grad = (2 / N) * (
                     predictions.data - targets.data
                     )
                 predictions._add_grad(mse_grad * error.grad)
