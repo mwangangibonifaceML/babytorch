@@ -13,4 +13,6 @@ dependencies = [
     "requests>=2.32.5",
     "sns>=0.1",
     "pytest",
+    "pandas",
+    "scikit-learn"
 ]
