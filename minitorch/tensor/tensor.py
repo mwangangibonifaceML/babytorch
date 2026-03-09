@@ -334,23 +334,61 @@ class Tensor:
         return result
     
     def __getitem__(self, key):
-        """Enable Tensor indexing and slicing"""
-        assert key <= len(self.data), f'Index out of range, must be in range 0 - {len(self.data)}'
-        results_data = self.data[key]
+        """
+        Enable Tensor indexing and slicing.
+        Supports:
+            tensor[i]
+            tensor[i:j]
+            tensor[:, 1:-1]
+            tensor[:, -1]
+            tensor[i, j]
+        """
 
-        if not isinstance(results_data, np.ndarray):
-            results_data = np.array(results_data)
-        result = Tensor(results_data, requires_grad= self.requires_grad, _parents=(self,))
-        
-        grad_input = np.zeros(self.data.shape, dtype=np.float32)
-        grad_input[key] = result.grad
-        
+        # forward pass
+        result_data = self.data[key]
+
+        if not isinstance(result_data, np.ndarray):
+            result_data = np.array(result_data)
+
+        result = Tensor(
+            result_data,
+            requires_grad=self.requires_grad,
+            _parents=(self,)
+        )
+
         def _backward():
-            if self.requires_grad:
-                self._add_grad(grad_input)
+            if not self.requires_grad:
+                return
+
+            grad_input = np.zeros_like(self.data)
+
+            # Scatter gradient back to the indexed positions
+            grad_input[key] += result.grad
+
+            self._add_grad(grad_input)
+
         result._backward = _backward
-        
+
         return result
+
+    # def __getitem__(self, key):
+    #     """Enable Tensor indexing and slicing"""
+    #     assert key <= len(self.data), f'Index out of range, must be in range 0 - {len(self.data)}'
+    #     results_data = self.data[key]
+
+    #     if not isinstance(results_data, np.ndarray):
+    #         results_data = np.array(results_data)
+    #     result = Tensor(results_data, requires_grad= self.requires_grad, _parents=(self,))
+        
+    #     grad_input = np.zeros(self.data.shape, dtype=np.float32)
+    #     grad_input[key] = result.grad
+        
+    #     def _backward():
+    #         if self.requires_grad:
+    #             self._add_grad(grad_input)
+    #     result._backward = _backward
+        
+    #     return result
     
     
     def sum(self, axis=None, keepdims=False)-> Tensor:
