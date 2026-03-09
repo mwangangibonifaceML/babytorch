@@ -125,7 +125,7 @@ class BinaryCrossEntropy(Loss):
         
         #* calculate the binary cross entropy
         #* bce_per_sample = -[y * log(p) + (1-y) * log(1-p)]
-        bce_per_sample = -(targets.data * np.log(prediction_clipped) + \
+        bce_per_sample = -np.sum(targets.data * np.log(prediction_clipped) + \
         (1 - targets.data) * np.log(1 - prediction_clipped))
         
         loss = Tensor(bce_per_sample, 
