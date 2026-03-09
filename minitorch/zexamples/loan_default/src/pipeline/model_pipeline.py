@@ -1,7 +1,7 @@
 import numpy as np
 from minitorch.tensor.tensor import Tensor
 from minitorch.nn.layers import Linear, Sequential, Dropout
-from minitorch.activations.activations import ReLU, Sigmoid
+from minitorch.activations.activations import ReLU, Sigmoid, GELU
 from minitorch.zexamples.loan_default.src.components.data_transformation import DataTransformation
 
 
@@ -10,16 +10,21 @@ class LoanDefaultPredictor:
         self.layers = Sequential(
             [
                 #* 1st layer
-                Linear(in_features, 128),
-                ReLU(),
+                Linear(in_features, 32),
+                GELU(),
                 Dropout(drop_out_p),
                 
                 #* 2nd layer
-                Linear(128, 64),
-                ReLU(),
+                Linear(32, 32),
+                GELU(),
+                
+                #* 3rd layer
+                Linear(32, 32),
+                GELU(),
+                Dropout(drop_out_p),
                 
                 #* output layer
-                Linear(64, out_features),
+                Linear(32, out_features),
                 Sigmoid()
                 
             ]
@@ -31,6 +36,9 @@ class LoanDefaultPredictor:
     
     def __call__(self, inputs: Tensor) -> Tensor:
         return self.forward(inputs)
+    
+    def parameters(self):
+        return self.layers.parameters()
     
     
     

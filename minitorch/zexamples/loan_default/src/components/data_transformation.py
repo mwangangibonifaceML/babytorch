@@ -37,7 +37,6 @@ class DataTransformation:
             
             #* concatenate the features and the targets to a single array
             print('Concating thr features and the targets back to gether ...')
-            print(self.train_target, self.test_target)
             train_array = np.c_[train_arr, np.array(self.train_target)]
             test_array = np.c_[test_arr, np.array(self.test_target)]
             print('✅✅ Done with the concatination and the data transformatiom.')

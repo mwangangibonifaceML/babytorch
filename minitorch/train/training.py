@@ -199,12 +199,12 @@ class Trainer:
         loss = self.loss_fn(predictions, targets)
         
         #* compute scaled loss for accumulation
-        scaled_loss = loss.data / accumulation_steps
+        scaled_loss = loss / accumulation_steps
         
         #* backward pass
-        loss.backward()
+        scaled_loss.backward()
         
-        return float(scaled_loss)
+        return float(scaled_loss.data)
 
     def _optimizer_update(self):
         """
