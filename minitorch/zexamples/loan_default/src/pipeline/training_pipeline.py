@@ -8,8 +8,8 @@ from minitorch.losses.losses import BinaryCrossEntropy
 from minitorch.optimizers.optim import SGD, Adam, AdamW
 from minitorch.train.training import Trainer, CosineSchedule
 
-MAX_EPOCHS = 20
-STEPS = MAX_EPOCHS * 2
+MAX_EPOCHS = 200
+STEPS = MAX_EPOCHS / 10
 
 # Ingestion and transform the data
 data_transformer = DataTransformation()
@@ -24,7 +24,7 @@ ds = TensorDataset(features, target)
 train_loader = DataLoader(ds, batch_size=32, shuffle=False)
 
 # create the model
-model = LoanDefaultPredictor(in_features=features.shape[1], out_features=1, drop_out_p=0.2)
+model = LoanDefaultPredictor(in_features=features.shape[1], out_features=1, drop_out_p=0.0)
 loss_fn = BinaryCrossEntropy()
 # optimizer = SGD(model.parameters(), lr=0.003, momentum=0.9, weight_decay=0.1)
 optimizer = AdamW(model.parameters(), lr=0.03, weight_decay=0.1)
@@ -43,6 +43,10 @@ for epoch in range(MAX_EPOCHS):
     if (epoch + 1) % STEPS == 0:
         print(f'Epoch {epoch+1}/{MAX_EPOCHS} | Average Loss: {loss:.4f}')
         print(f'Learning Rate at epoch {epoch+1}: {trainer.scheduler.get_lr(epoch):.6f}\n')
+        
+        for p in model.parameters():
+            print(f'Parameter: {p.data.flatten()[:5]} | Grad: {p.grad.flatten()[:5]}')
+        print('\n')
     
     
     

@@ -43,7 +43,7 @@ class Tensor:
         self,
         data: NDArray[int, float],
         requires_grad: bool =False,
-        _parents=()
+        _parents= tuple()
         ) -> None:
         # assert isinstance(data, (NDArray, float, int, Tensor))
         
@@ -78,14 +78,13 @@ class Tensor:
             
             # Update self.data
             self.data = new_data
-            self.requires_grad = any(x.requires_grad for x in flat)
-            self._parents = tuple(flat)
             
         self.shape = self.data.shape        #* Tuple[int, ...], look at the shape attribute of numpy arrays
         self.size = self.data.size          #* Int, look at the number of elements in numpy arrays
         self.dtype = 'float32'       #* Data type of the underlying numpy array
-        self.requires_grad = requires_grad  #* The trigger for gradient computation (dormant feature)
-        
+        self.requires_grad = requires_grad or any(p.requires_grad for p in _parents)
+        self._parents = _parents
+
         self.grad = np.zeros_like(
             self.data, dtype=np.float32) if requires_grad else None      #* Placeholder: store gradients here in future modules
         
@@ -268,6 +267,7 @@ class Tensor:
         result._backward = _backward
         return result
     
+
     def matmul(self, other) -> "Tensor":
         other = other if isinstance(other, Tensor) else Tensor(other)
 
@@ -543,8 +543,8 @@ class Tensor:
                 for parent in root._parents:
                     build_graph(parent)
             
-            #* add self after all parents are visited
-            topo.append(root)
+                #* add self after all parents are visited
+                topo.append(root)
             
         build_graph(self)
             

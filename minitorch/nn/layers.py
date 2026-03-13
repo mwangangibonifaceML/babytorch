@@ -178,12 +178,16 @@ class Linear(Layer):
         parameters(): Returns the parameters of the linear layer.
     """
     
-    def __init__(self, in_features: int, out_features: int, bias=False) -> None:
+    def __init__(self, in_features: int, out_features: int, bias=False, xaiver_init: bool=True) -> None:
         self.in_features = in_features
         self.out_features = out_features
         
         #* Xavier initialization for stable gradients
-        scale = (XAVIER_SCALE_FACTOR / in_features) ** 0.5
+        #* He initialization for ReLU/GELU activations
+        #* XAVIER_SCALE_FACTOR = 1.0 whilwe HE_SCALE_FACTOR = 2.0
+        scale = (XAVIER_SCALE_FACTOR / in_features) ** 0.5 if xaiver_init else \
+            (HE_SCALE_FACTOR / in_features) ** 0.5
+            
         self.weight = Parameter(
             Tensor(np.random.randn(out_features, in_features) * scale))
         

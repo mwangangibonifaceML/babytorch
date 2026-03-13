@@ -31,6 +31,21 @@ class DataIngestion:
             print(f'📥 Loading dataset from {file_url}...')
             #* load the dataset using pandas
             df = pd.read_csv(file_url)
+            
+            #* balance the dataset by undersampling the majority class
+            if 'Status' not in df.columns:
+                raise ValueError("The required column 'Status' is missing from the dataset.")
+            
+            defaulters = df[df['Status'] == 1]
+            non_defaulters = df[df['Status'] == 0]
+            
+            if len(non_defaulters) > len(defaulters):
+                non_defaulters = non_defaulters.sample(n=len(defaulters), random_state=42)
+            else:
+                defaulters = defaulters.sample(n=len(non_defaulters), random_state=42)
+            
+            df = pd.concat([defaulters, non_defaulters])
+            
             print('✅ Loaded dataset successfully.')
             
             #* split the dataset into training and testing sets
@@ -47,30 +62,33 @@ class DataIngestion:
             if not artifacts_path.exists():
                 print(f'📁 Creating directory at {artifacts_path}...')
                 os.makedirs(artifacts_path, exist_ok=True)
+                print(f'💾 Saving dataset to {artifacts_path}...')
+                df.to_csv(os.path.join(artifacts_path, 'dataset.csv'), index=False)
+                print('✅ Saved dataset successfully.')
+                
+                
+                print(f'💾 Saving training and testing datasets to {artifacts_path}...')
+                train_path = os.path.join(artifacts_path, 'train.csv')
+                test_path = os.path.join(artifacts_path, 'test.csv')
+                train_df.to_csv(train_path, index=False)
+                test_df.to_csv(test_path, index=False)
+                
+                print('✅ Saved training and testing datasets successfully.')
+                print('✅ Data ingestion completed successfully.')
+                return (train_path, test_path)
             else:
                 print(f'📁 Directory already exists at {artifacts_path}.')
-                print('Overwriting existing files in the directory...')
-                print('🧹 Cleaning up old artifacts directory...')
+                print('✅ Data already ingested.')
                 
-                for file in artifacts_path.iterdir():
-                    file.unlink()
-                    
-                print('✅ Cleaned up old artifacts directory successfully, ready to save new files.')
-                
-            print(f'💾 Saving dataset to {artifacts_path}...')
-            df.to_csv(os.path.join(artifacts_path, 'dataset.csv'), index=False)
-            print('✅ Saved dataset successfully.')
-            
-            
-            print(f'💾 Saving training and testing datasets to {artifacts_path}...')
-            train_path = os.path.join(artifacts_path, 'train.csv')
-            test_path = os.path.join(artifacts_path, 'test.csv')
-            train_df.to_csv(train_path, index=False)
-            test_df.to_csv(test_path, index=False)
-            print('✅ Saved training and testing datasets successfully.')
-            print('✅ Data ingestion completed successfully.')
-            
-            return (train_path, test_path)
+                #* get the paths of the existing training and testing datasets
+                train_path = os.path.join(artifacts_path, 'train.csv')
+                test_path = os.path.join(artifacts_path, 'test.csv')
+                if os.path.exists(train_path) and os.path.exists(test_path):
+                    print('✅ Found existing training and testing datasets. Returning their paths.')
+                    return (train_path, test_path)
+                else:
+                    print('❌ Existing training and testing datasets not found. Please check the artifacts directory.')
+                    raise FileNotFoundError('Existing training and testing datasets not found in artifacts directory.')
             
         except Exception as e:
             print(f'❌ Error during data ingestion: {e}')

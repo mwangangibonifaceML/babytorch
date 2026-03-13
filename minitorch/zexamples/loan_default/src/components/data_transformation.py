@@ -16,6 +16,7 @@ class DataTransformation:
         #* store the data sets
         self.train_set = pd.read_csv(train_url)
         self.test_set = pd.read_csv(test_url)
+        print(self.train_set.shape, self.test_set.shape)
         
         #* separate the features from target
         self.train_features = self.train_set.drop(columns=['ID', 'year', 'Status'], axis=1)
@@ -27,20 +28,26 @@ class DataTransformation:
     def initiate_data_transformation(self):
         try:
             #* preprocess the data
-            print('🧪 Getting the preprocessing Objects ...' )
-            train_preprocessor_obj, test_preprocesor_obj = self._get_preprocessor_object()
+            print('🧪 Getting the preprocessing Object ...' )
+            preprocessor_obj = self._get_preprocessor_object()
             
-            print('✍️ Applying transformation to both the training and testing datasets ...')
-            train_arr = train_preprocessor_obj.fit_transform(self.train_features)
-            test_arr = test_preprocesor_obj.fit_transform(self.test_features)
+            print('✍️ Applying transformation to training datasets ...')
+            train_arr = preprocessor_obj.fit_transform(self.train_features)
+            
+            print('✍️ Applying transformation to testing datasets ...')
+            test_arr = preprocessor_obj.transform(self.test_features)
             print('✅ Done with the transformatiom ')
             
             #* concatenate the features and the targets to a single array
-            print('Concating thr features and the targets back to gether ...')
-            train_array = np.c_[train_arr, np.array(self.train_target)]
-            test_array = np.c_[test_arr, np.array(self.test_target)]
+            print('Concating the features and the targets back together ...')
+            y_train_array = np.array(self.train_target).reshape(-1, 1)
+            y_test_array = np.array(self.test_target).reshape(-1, 1)
+            
+            train_array = np.c_[train_arr, y_train_array]
+            test_array = np.c_[test_arr, y_test_array]
             print('✅✅ Done with the concatination and the data transformatiom.')
             
+            print(train_array.shape, test_array.shape)
             return train_array, test_array
 
         except Exception as e:
@@ -48,50 +55,32 @@ class DataTransformation:
     
     def _get_preprocessor_object(self):
         #* extract the numerical and categorical columns
-        train_num_cols = self.train_features.select_dtypes(include=['int64', 'float32']).columns
-        test_num_cols = self.test_features.select_dtypes(include=['int64', 'float32']).columns
-        
-        train_cat_cols = self.train_features.select_dtypes(include=['object']).columns
-        test_cat_cols = self.test_features.select_dtypes(include=['object']).columns
-        
+        num_col_identifiers = ['int32', 'int64', 'float64', 'float32']
+        cat_col_identifiers = ['object']
+        train_num_cols = self.train_features.select_dtypes(include= num_col_identifiers).columns
+        train_cat_cols = self.train_features.select_dtypes(include= cat_col_identifiers).columns
+    
         #* create the transformers
-        numerical_imputer = KNNImputer(n_neighbors=5)
-        numerical_scaler = StandardScaler(with_mean=False)
-        
-        categorical_imputer = SimpleImputer(strategy= 'most_frequent')
-        categorical_scaler = StandardScaler(with_mean=False)
-        categorical_encoder = OneHotEncoder(drop='first')
-        
         numerical_col_pipeline = Pipeline(
             steps= [
-                ('imputer', numerical_imputer),
-                ('scaler', numerical_scaler)
+                ('imputer', KNNImputer(n_neighbors=5)),
+                ('scaler', StandardScaler(with_mean=True))
             ]
         )
         
         categorical_cols_pipeline = Pipeline(
             steps= [
-                ('imputer', categorical_imputer),
-                ('encoder', categorical_encoder),
-                ('scaler', categorical_scaler)
-                
-            ]
+                ('imputer', SimpleImputer(strategy= 'median')),
+                ('encoder', OneHotEncoder(drop='first', sparse_output=False, handle_unknown='ignore'))
+                ]
         )
         
-        train_preprocessor_obj = ColumnTransformer(transformers= [
+        preprocessor_obj = ColumnTransformer(transformers= [
             ('numerical', numerical_col_pipeline, train_num_cols),
             ('categorical', categorical_cols_pipeline, train_cat_cols)
         ])
         
-        test_preprocessor_obj = ColumnTransformer(transformers=[
-            ('numerical', numerical_col_pipeline, test_num_cols),
-            ('categorical', categorical_cols_pipeline, test_cat_cols)
-        ])
-        
-        return (
-            train_preprocessor_obj,
-            test_preprocessor_obj
-        )
+        return preprocessor_obj
         
         
 if __name__ == '__main__':

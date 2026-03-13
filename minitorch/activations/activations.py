@@ -60,15 +60,15 @@ class Sigmoid:
         z = np.exp(clipped_X[negative_mask])
         results[negative_mask] += z / (1 + z)
         
-        results = Tensor(results, requires_grad=X.requires_grad, _parents=(X,))
+        sigmoid = Tensor(results, requires_grad=X.requires_grad, _parents=(X,))
         
         if X.requires_grad:
             def _backward():
-                Sigmoid_gradient = results.data * (1 - results.data)
-                X._add_grad(results.grad * Sigmoid_gradient)
-            results._backward = _backward
+                Sigmoid_gradient = sigmoid.data * (1 - sigmoid.data) # sigmoid * (1 - sigmoid)
+                X._add_grad(sigmoid.grad * Sigmoid_gradient)
+            sigmoid._backward = _backward
             
-        return results
+        return sigmoid
         
     def __call__(self, x: Tensor) -> Tensor:
         """Allows the activation to be called like a function."""

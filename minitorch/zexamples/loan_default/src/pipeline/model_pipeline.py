@@ -10,22 +10,16 @@ class LoanDefaultPredictor:
         self.layers = Sequential(
             [
                 #* 1st layer
-                Linear(in_features, 32),
+                Linear(in_features, 64, xaiver_init=False),
                 GELU(),
                 Dropout(drop_out_p),
                 
                 #* 2nd layer
-                Linear(32, 32),
+                Linear(64, 32, xaiver_init=False),
                 GELU(),
-                
-                #* 3rd layer
-                Linear(32, 32),
-                GELU(),
-                Dropout(drop_out_p),
                 
                 #* output layer
-                Linear(32, out_features),
-                Sigmoid()
+                Linear(32, out_features, xaiver_init=False),
                 
             ]
         )
