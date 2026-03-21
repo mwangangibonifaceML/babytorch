@@ -2,7 +2,7 @@ import pandas as pd
 import numpy as np
 
 from minitorch.tensor.tensor import Tensor
-from minitorch.zexamples.loan_default.src.components.data_ingestion import DataIngestion
+from minitorch.labs.loan_default.src.components.data_ingestion import DataIngestion
 from sklearn.impute import KNNImputer, SimpleImputer
 from sklearn.preprocessing import StandardScaler, OneHotEncoder
 from sklearn.pipeline import Pipeline

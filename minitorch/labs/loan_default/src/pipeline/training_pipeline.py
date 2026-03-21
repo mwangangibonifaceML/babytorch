@@ -2,8 +2,8 @@ import numpy as np
 
 from minitorch.tensor.tensor import Tensor
 from minitorch.dataloaders.dataloader import DataLoader, TensorDataset
-from minitorch.zexamples.loan_default.src.components.data_transformation import DataTransformation
-from minitorch.zexamples.loan_default.src.pipeline.model_pipeline import LoanDefaultPredictor
+from minitorch.labs.loan_default.src.components.data_transformation import DataTransformation
+from minitorch.labs.loan_default.src.pipeline.model_pipeline import LoanDefaultPredictor
 from minitorch.losses.losses import BinaryCrossEntropy
 from minitorch.optimizers.optim import SGD, Adam, AdamW
 from minitorch.train.training import Trainer, CosineSchedule

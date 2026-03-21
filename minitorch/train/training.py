@@ -101,7 +101,9 @@ class CosineSchedule:
         return lr
     
 class Trainer:
-    def __init__(self,model, loss_fn, optimizer,scheduler: CosineSchedule | None = None, clip_gradients = True) -> None:
+    def __init__(self,model, 
+                loss_fn, optimizer,scheduler: CosineSchedule | None = None,
+                clip_gradients = True) -> None:
         self.model = model
         self.loss_fn = loss_fn
         self.optimizer = optimizer

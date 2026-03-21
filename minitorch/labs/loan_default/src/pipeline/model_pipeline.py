@@ -2,7 +2,7 @@ import numpy as np
 from minitorch.tensor.tensor import Tensor
 from minitorch.nn.layers import Linear, Sequential, Dropout
 from minitorch.activations.activations import ReLU, Sigmoid, GELU
-from minitorch.zexamples.loan_default.src.components.data_transformation import DataTransformation
+from minitorch.labs.loan_default.src.components.data_transformation import DataTransformation
 
 
 class LoanDefaultPredictor:
