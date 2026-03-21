@@ -55,10 +55,7 @@ class Tensor:
         self.requires_grad = requires_grad    
         self.device = device if device is not None else 'cpu'
         self._parents = _parents
-        self.shape = self.data.shape
         self.grad = np.zeros(self.data.shape, dtype='float32')
-        self.dtype = self.data.dtype
-        self.size = self.data.size
         self._backward = lambda: None
         
     def __repr__(self) -> str:
@@ -66,6 +63,18 @@ class Tensor:
     
     def __str__(self) -> str:
         return f"Tensor(data={self.data})"
+    
+    @property
+    def shape(self):
+        return self.data.shape
+    
+    @property
+    def size(self):
+        return self.data.size
+    
+    @property
+    def dtype(self):
+        return self.data.dtype
     
     @staticmethod
     def __ensure_tensor(x: Union[int, float, np.ndarray]) -> Tensor:
