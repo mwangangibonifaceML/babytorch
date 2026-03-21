@@ -581,60 +581,41 @@ class Tensor:
         """Create a Tensor from a NumPy array."""
         return cls(data=array, requires_grad=requires_grad, dtype=dtype, device=device)
         
-    #* ============ ACTIVATIONS ===============
+    @classmethod
+    def zeros(cls, shape, requires_grad=False, dtype='float32', device=None) -> Tensor:
+        """Create a Tensor filled with zeros."""
+        data = np.zeros(shape, dtype=dtype)
+        return cls(data=data, requires_grad=requires_grad, dtype=dtype, device=device)
     
-    def tanh(self):
-        "Hyperbolic tangent activation function"
-        #* forward pass : exp(x) - exp(-x) / exp(x) + exp(-x)
-        t = np.tanh(self.data)
-        result = Tensor(t, requires_grad=self.requires_grad, _parents=(self,))
-        
-        def _backward():
-            if self.requires_grad:
-                self._add_grad((1 - t ** 2) * result.grad)
-        result._backward = _backward
-        return result
+    @classmethod
+    def ones(cls, shape, requires_grad=False, dtype='float32', device=None) -> Tensor:
+        """Create a Tensor filled with ones."""
+        data = np.ones(shape, dtype=dtype)
+        return cls(data=data, requires_grad=requires_grad, dtype=dtype, device=device)
     
-    def sigmoid(self):
-        """Sigmoid activation: σ(x) = 1/(1 + e^(-x))
+    @classmethod
+    def randn(cls, shape, requires_grad=False, dtype='float32', device=None) -> Tensor:
+        """Create a Tensor filled with random values from a normal distribution."""
+        data = np.random.randn(*shape).astype(dtype)
+        return cls(data=data, requires_grad=requires_grad, dtype=dtype, device=device)
     
-        Maps input to the range (0, 1).
-        Perfect for probabilities and binary classification
-        
-        Args:
-            X (Tensor): Input tensor.
-        
-        Returns:
-            Tensor: Output tensor after applying Sigmoid activation.
-        """
-        #* Apply sigmoid: 1 / (1 + (-X).exp())
-        #* clip extreme values to prevent overflows (sigmoid(-500) ~ 0, sigmoid(500) ~ 1)
-        #* clipping at -500 and 500 ensures that exp(-x) stays within float64 range
-        
-        clipped_X = np.clip(self.data, -500, 500)
-        
-        #* Use numerical stable sigmoid formula
-        #* for positive numbers: 1 / (1 + exp(-x))
-        #* for negative numbers: exp(x) / (1 + exp(x))
-        
-        results = np.zeros_like(clipped_X)
-        
-        #* For positive numbers
-        positive_mask = clipped_X >= 0
-        z = np.exp(-clipped_X[positive_mask])
-        results[positive_mask] = 1 / (1 + z)
-        
-        #* For negative numbers
-        negative_mask = clipped_X < 0
-        z = np.exp(clipped_X[negative_mask])
-        results[negative_mask] = z / (1 + z)
-        
-        results = Tensor(results, requires_grad=self.requires_grad, _parents=(self,))
-        
-        if self.requires_grad:
-            def _backward():
-            
-                sigmoid_gradient = results.data * (1 - results.data)
-                self._add_grad(results.grad * sigmoid_gradient)
-            results._backward = _backward
-        return results
+    @classmethod
+    def rand(cls, shape, requires_grad=False, dtype='float32', device=None) -> Tensor:
+        """Create a Tensor filled with random values from a uniform distribution."""
+        data = np.random.rand(*shape).astype(dtype)
+        return cls(data=data, requires_grad=requires_grad, dtype=dtype, device=device)
+
+    @classmethod
+    def arange(cls, start, end=None, step=1, requires_grad=False, dtype='float32', device=None) -> Tensor:
+        """Create a Tensor with values from start to end with a given step."""
+        if end is None:
+            end = start
+            start = 0
+        data = np.arange(start, end, step, dtype=dtype)
+        return cls(data=data, requires_grad=requires_grad, dtype=dtype, device=device)
+    
+    @classmethod
+    def constant(cls, value, shape=(), requires_grad=False, dtype='float32', device=None) -> Tensor:
+        """Create a Tensor filled with a constant value."""
+        data = np.full(shape, value, dtype=dtype)
+        return cls(data=data, requires_grad=requires_grad, dtype=dtype, device=device)
