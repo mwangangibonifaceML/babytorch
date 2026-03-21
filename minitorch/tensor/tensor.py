@@ -573,6 +573,14 @@ class Tensor:
         grad = unbroadcast(grad, self.shape)
         self.grad += grad
         
+    @classmethod
+    def from_numpy(cls,
+                array: NDArray,
+                requires_grad=False,
+                dtype='float32', device=None) -> Tensor:
+        """Create a Tensor from a NumPy array."""
+        return cls(data=array, requires_grad=requires_grad, dtype=dtype, device=device)
+        
     #* ============ ACTIVATIONS ===============
     
     def tanh(self):
