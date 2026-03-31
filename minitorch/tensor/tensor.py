@@ -33,11 +33,14 @@ class Tensor:
     """A tensor class that tries to mimick a pytorch tensor
     
     This class starts simple but includes features for future modules:
-    - requires_grad: Will be used for automatic differentiation (implemented in autograd module)
-    - grad: Will store computed gradients (implemented in autograd module)
-    - backward(): Will compute gradients (the core idea in autograd module)
+    - device: To support CPU/GPU tensors in the future.
+    - _parents: To track the computational graph for autograd.
+    - data: The underlying NumPy array storing the tensor values.
+    - requires_grad: Will be used for automatic differentiation.
+    - grad: Will store computed gradients. 
+    - backward(): Will compute gradients (the core idea in autograd).
 
-    For now,this class focuses on: data, shape, and basic operations.
+    This class focuses on: data, shape, and basic operations.
     """
     def __init__(self, data, requires_grad=False, dtype='float32', device=None, _parents= tuple()):
         if isinstance(data, Tensor):
@@ -91,14 +94,6 @@ class Tensor:
     
     def copy(self) -> Tensor:
         return Tensor(self.data.copy())
-    
-    def memory_footprint(self)-> int:
-        """Calculate exact memory usage in bytes
-        
-        Returns:
-            int: Memoery usage in bytes (eg., 1000X1000 float32 = 4MB)
-        """
-        return int(self.data.nbytes)
     
     def _determine_gradient_requirement(self, other: Any)-> bool:
         if isinstance(other, Tensor):
