@@ -125,7 +125,6 @@ class Tensor:
     
     def __radd__(self, other):
         return self.__add__(other)
-    
         
     def __mul__(self, other)-> Tensor:
         """Multiply two tensors element-wise (NOT matrix multiplication)."""
@@ -179,7 +178,6 @@ class Tensor:
                         _parents=(self,other),
                         dtype=self.dtype,
                         device=self.device)
-        
         
         def _backward():
             if self.requires_grad:
@@ -264,7 +262,6 @@ class Tensor:
         other = other if isinstance(other, Tensor) else Tensor(other)
 
         if self.data.ndim == 0 or other.data.ndim == 0:
-            # scalar multiplication fallback
             result = Tensor(
                 self.data * other.data,
                 requires_grad=self._determine_gradient_requirement(other),
@@ -566,7 +563,7 @@ class Tensor:
             self.grad = np.zeros_like(self.data, dtype=np.float32)
             
         grad = unbroadcast(grad, self.shape)
-        self.grad += grad
+        self.grad = self.grad + grad
         
     @classmethod
     def from_numpy(cls,
