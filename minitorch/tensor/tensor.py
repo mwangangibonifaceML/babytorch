@@ -100,6 +100,47 @@ class Tensor:
             return self.requires_grad or other.requires_grad
         return self.requires_grad
     
+    
+    def __getitem__(self, key):
+        """
+        Enable Tensor indexing and slicing.
+        Supports:
+            tensor[i]
+            tensor[i:j]
+            tensor[:, 1:-1]
+            tensor[:, -1]
+            tensor[i, j]
+        """
+
+        # forward pass
+        result_data = self.data[key]
+
+        if not isinstance(result_data, np.ndarray):
+            result_data = np.array(result_data)
+
+        result = Tensor(
+            result_data,
+            requires_grad=self.requires_grad,
+            _parents=(self,),
+            dtype=self.dtype,
+            device=self.device
+        )
+
+        def _backward():
+            if not self.requires_grad:
+                return
+
+            grad_input = np.zeros_like(self.data)
+
+            # Scatter gradient back to the indexed positions
+            grad_input[key] += result.grad
+
+            self._add_grad(grad_input)
+
+        result._backward = _backward
+
+        return result
+    
     def __len__(self)->int:
         return len(self.data)
     
@@ -326,45 +367,6 @@ class Tensor:
         result._backward = _backward
         return result
     
-    def __getitem__(self, key):
-        """
-        Enable Tensor indexing and slicing.
-        Supports:
-            tensor[i]
-            tensor[i:j]
-            tensor[:, 1:-1]
-            tensor[:, -1]
-            tensor[i, j]
-        """
-
-        # forward pass
-        result_data = self.data[key]
-
-        if not isinstance(result_data, np.ndarray):
-            result_data = np.array(result_data)
-
-        result = Tensor(
-            result_data,
-            requires_grad=self.requires_grad,
-            _parents=(self,),
-            dtype=self.dtype,
-            device=self.device
-        )
-
-        def _backward():
-            if not self.requires_grad:
-                return
-
-            grad_input = np.zeros_like(self.data)
-
-            # Scatter gradient back to the indexed positions
-            grad_input[key] += result.grad
-
-            self._add_grad(grad_input)
-
-        result._backward = _backward
-
-        return result
     
     def sum(self, axis=None, keepdims=False)-> Tensor:
         """Sum tensor along specified axis"""
@@ -476,15 +478,13 @@ class Tensor:
         ### BEGIN SOLUTION
         axis = None
         if dim0 is None and dim1 is None:
-            if len(self.shape) < 2:
+            if len(self.shape) < 2: #* 1D or scalar 
                 transposed_data = self.data.copy()
-            else:
+            else:                   #* default case
                 axes = list(range(len(self.shape)))
                 axes[-2], axes[-1] = axes[-1], axes[-2]
                 transposed_data = np.transpose(self.data, axes)
         else:
-            if dim0 is None or dim1 is None:
-                raise ValueError('Both dim1 and dim1 must be provided')
             if dim0 < 0 or dim1 < 0:
                 raise ValueError('Dimensions must be non-negative')
             if dim0 >= len(self.shape) or dim1 >= len(self.shape):
@@ -504,18 +504,12 @@ class Tensor:
                         device=self.device)
         
         def _backward():
-            if not self.requires_grad:
-                return
-            if result.grad is None:
+            if not self.requires_grad or result.grad:
                 return 
                 
             # transpose gradient back
             grad_input = np.transpose(result.grad, axis)
-
-            if self.grad is None:
-                self.grad = grad_input
-            else:
-                self._add_grad(grad_input)
+            self._add_grad(grad_input)
         
         result._backward = _backward
         return result
