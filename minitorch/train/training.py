@@ -39,7 +39,7 @@ def clip_grad_norm(parameters: List[Tensor], max_norm: float = DEFAULT_MAX_NORM)
             grad = param.grad.data
         
         #* square the gradients and sum them
-        total_gradients += np.sum(grad ** 2)
+        total_gradients = total_gradients + np.sum(grad ** 2)
         
     #* get the global norm for all gradients
     total_norm = np.sqrt(total_gradients)
@@ -51,9 +51,9 @@ def clip_grad_norm(parameters: List[Tensor], max_norm: float = DEFAULT_MAX_NORM)
         for param in parameters:
             if param.grad is not None:
                 if isinstance(param.grad, np.ndarray):
-                    param.grad *= clip_coeffient
+                    param.grad = param.grad * clip_coeffient
                 else:
-                    param.grad.data *= clip_coeffient
+                    param.grad.data = param.grad.data * clip_coeffient
     
     return float(total_norm)
 
@@ -212,9 +212,9 @@ class Trainer:
         """
         Clip gradients if enabled and step the optimizer.
         """
+        params = self.model.parameters()
         if self.clip_gradients:
-            params = self.model.parameters()
-            clip_grad_norm(params)
+                clip_grad_norm(params) 
             
         self.optimizer.step()
         self.optimizer.zero_grad()
