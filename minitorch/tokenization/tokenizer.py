@@ -76,7 +76,7 @@ class CharTokenizer(Tokenizer):
         
     def _add_token(self, token: str) -> None:
         """
-        Add a token to the vocabulary and return its assigned ID.
+        Add a token to the vocabulary.
         
         Args:
             token (str): The token to be added to the vocabulary.
@@ -148,9 +148,6 @@ class BPETokenizer(Tokenizer):
         Splits text into words and punctuation while preserving 
         essential boundaries.
         """
-        # This regex separates words from punctuation:
-        # \w+ matches word characters
-        # [^\w\s] matches punctuation (anything not word/space)
         return re.findall(r'\w+|[^\w\s]', text)
         
     def _get_word_tokens(self, word: str) -> List[str]:
@@ -177,10 +174,13 @@ class BPETokenizer(Tokenizer):
         to merge them
 
         Args:
-            corpus (List[str]): Document to learn and train from
+            corpus (List[str]): Document to learn and train from (expected to be a list of sentences)
             vocab_size (int): maximum vocabulary size allowed
         """
         full_corpus = []
+        
+        if corpus is None or len(corpus) == 0:
+            raise ValueError("Corpus cannot be empty. Please provide a valid corpus for training.")
         
         for sentence in corpus:
             full_corpus.extend(self.pre_tokenize(sentence))
@@ -188,7 +188,7 @@ class BPETokenizer(Tokenizer):
         if vocab_size:
             self.vocab_size = vocab_size
             
-            
+        #* count word occurences in the corpus to get the frequency of each word
         word_freq: Counter = Counter(full_corpus)
         word_tokens: Dict[str, list[str]] = {}
         vocab = set()
