@@ -188,11 +188,10 @@ class Linear(Layer):
         scale = (XAVIER_SCALE_FACTOR / in_features) ** 0.5 if xaiver_init else \
             (HE_SCALE_FACTOR / in_features) ** 0.5
             
-        self.weight = Parameter(
-            Tensor(np.random.randn(out_features, in_features) * scale))
+        self.weight = Tensor(np.random.randn(out_features, in_features) * scale, requires_grad=True)
         
         if bias == True:
-            self.bias = Parameter(Tensor(np.zeros(out_features)))
+            self.bias = Tensor.zeros(shape=out_features, requires_grad=True)
             
         else:
             self.bias = None
@@ -217,7 +216,9 @@ class Linear(Layer):
         Returns:
             list[Tensor]: A list containing the weight and bias tensors.
         """
-        return super().parameters()
+        if self.bias:
+            return self.weight, self.bias
+        return self.weight
     
     def __repr__(self) -> str:
         """String representation of the linear layer."""

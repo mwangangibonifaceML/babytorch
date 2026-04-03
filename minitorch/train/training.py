@@ -152,7 +152,7 @@ class Trainer:
         
         for i, (inputs, targets) in enumerate(dataloader):
             #* process the batch
-            accumulated_loss += self._process_batch(inputs, targets, accumulation_steps)
+            accumulated_loss += self._process_batch(inputs, targets)
             
             #* update parameters every accumulation step
             if (i + 1) % accumulation_steps == 0:
@@ -177,14 +177,14 @@ class Trainer:
         if self.scheduler is not None:
             learning_rate = self.scheduler.get_lr(self.epoch)
             self.optimizer.lr = learning_rate
-            self.history['learning_rates'].append(learning_rate.item())
+            self.history['learning_rates'].append(float(learning_rate))
             
         # increment epochs
         self.epoch += 1
         return average_loss
         
         
-    def _process_batch(self, inputs: Tensor, targets: Tensor, accumulation_steps:int)-> float:
+    def _process_batch(self, inputs: Tensor, targets: Tensor,  threshold: float = 0.3)-> float:
         """
         Process a single batch by doing a forward pass, compute loss and backward pass on it.
         
@@ -200,13 +200,13 @@ class Trainer:
         predictions = self.model(inputs)
         loss = self.loss_fn(predictions, targets)
         
-        #* compute scaled loss for accumulation
-        scaled_loss = loss / accumulation_steps
+        # #* compute scaled loss for accumulation
+        # scaled_loss = loss / accumulation_steps
         
-        #* backward pass
-        scaled_loss.backward()
+        # #* backward pass
+        loss.backward()
         
-        return float(scaled_loss.data)
+        return float(loss.data)
 
     def _optimizer_update(self):
         """

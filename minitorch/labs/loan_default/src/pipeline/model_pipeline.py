@@ -1,7 +1,7 @@
 import numpy as np
 from minitorch.tensor.tensor import Tensor
 from minitorch.nn.layers import Linear, Sequential, Dropout
-from minitorch.activations.activations import ReLU, Sigmoid, GELU
+from minitorch.activations.activations import ReLU, Sigmoid, GELU, Tanh
 from minitorch.labs.loan_default.src.components.data_transformation import DataTransformation
 
 
@@ -10,28 +10,26 @@ class LoanDefaultPredictor:
         self.layers = Sequential(
             [
                 #* 1st layer
-                Linear(in_features, 64, xaiver_init=False),
-                GELU(),
-                Dropout(drop_out_p),
+                Linear(in_features, 64, xaiver_init=True, bias=False),
+                Tanh(),
+                # Dropout(drop_out_p),
                 
                 #* 2nd layer
-                Linear(64, 32, xaiver_init=False),
-                GELU(),
+                Linear(64, 32, xaiver_init=True, bias=False),
+                Tanh(),
                 
                 #* output layer
-                Linear(32, out_features, xaiver_init=False),
-                
+                Linear(32, out_features, xaiver_init=True, bias=False),
             ]
         )
     
     def forward(self, inputs: Tensor):
-        out = self.layers(inputs)
-        return out
+        return self.layers(inputs)
     
     def __call__(self, inputs: Tensor) -> Tensor:
         return self.forward(inputs)
     
-    def parameters(self):
+    def parameters(self):    
         return self.layers.parameters()
     
     

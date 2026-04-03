@@ -150,8 +150,8 @@ class SGD(Optimizer):
             if param.grad is None:
                 continue
             
-            #* extract the gradient for the current parameter
-            grad_data = np.array(param.grad.data)
+            #* extract the gradient for the current parameter (grad is already ndarray)
+            grad_data = np.array(param.grad)
             
             #* apply weight decay for the current parameter
             if self.weight_decay != 0:
