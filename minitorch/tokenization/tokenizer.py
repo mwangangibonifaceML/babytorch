@@ -136,6 +136,17 @@ class CharTokenizer(Tokenizer):
         return ''.join(chars)
     
 class BPETokenizer(Tokenizer):
+
+    """
+    Byte Pair Encoding (BPE) that learns subwords units.
+    
+    Starts by with character level vocabulary then learns
+    the most frequent character pairs and merges them together
+    to form single tokens.
+    
+    Keeps repeating until desired vocabulary size is attained.
+
+    """
     def __init__(self, vocab_size: int = 10000):
         self.vocab_size:     int = vocab_size
         self.vocab:          List = []
