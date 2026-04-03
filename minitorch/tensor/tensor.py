@@ -95,7 +95,7 @@ class Tensor:
     def copy(self) -> Tensor:
         return Tensor(self.data.copy())
     
-    def _determine_gradient_requirement(self, other: Any)-> bool:
+    def _determine_gradient_requirement(self, other: 'Tensor')-> bool:
         if isinstance(other, Tensor):
             return self.requires_grad or other.requires_grad
         return self.requires_grad
@@ -133,7 +133,7 @@ class Tensor:
             grad_input = np.zeros_like(self.data)
 
             # Scatter gradient back to the indexed positions
-            grad_input[key] += result.grad
+            grad_input[key] = grad_input[key] + result.grad
 
             self._add_grad(grad_input)
 
@@ -302,7 +302,7 @@ class Tensor:
     def matmul(self, other) -> "Tensor":
         other = other if isinstance(other, Tensor) else Tensor(other)
 
-        if self.data.ndim == 0 or other.data.ndim == 0:
+        if self.data.ndim == 0 or other.data.ndim == 0: #* 1D or scalar case, fallback to element-wise multiplication
             result = Tensor(
                 self.data * other.data,
                 requires_grad=self._determine_gradient_requirement(other),
@@ -311,7 +311,7 @@ class Tensor:
                 device=self.device
             )
             
-        else:
+        else:   #* 2D or higher case, perform matrix multiplication with shape checks
             if len(self.shape) >= 2 and len(other.shape) >=2:
                 if self.shape[-1] != other.shape[-2]:
                     raise ValueError(
@@ -334,35 +334,58 @@ class Tensor:
                 return
 
             grad_output = result.grad
-
-            # Case 1: Matrix @ Vector
-            if self.data.ndim == 2 and other.data.ndim == 1:
-                # (m,k) @ (k,) -> (m,)
-                if self.requires_grad:
-                    # dX = outer(grad_output, w)
+            if self.requires_grad and other.requires_grad:
+                #* Case 1: Matrix @ Vector
+                if self.data.ndim == 2 and other.data.ndim == 1:
+                    # (m,k) @ (k,) -> (m,)
                     grad_self = np.outer(grad_output, other.data)
-                    self._add_grad(grad_self)
-
-                if other.requires_grad:
-                    # dw = X^T @ grad_output
                     grad_other = self.data.T @ grad_output
-                    other._add_grad(grad_other)
-                    
-            # Case 2: Vector @ Matrix
-            else:
-                if self.requires_grad:
-                    grad_self = np.matmul(
-                        grad_output,
-                        np.swapaxes(other.data, -1, -2)
-                    )
                     self._add_grad(grad_self)
-
-                if other.requires_grad:
-                    grad_other = np.matmul(
-                        np.swapaxes(self.data, -1, -2),
-                        grad_output
-                    )
                     other._add_grad(grad_other)
+
+                #* Case 2: Vector @ Matrix
+                elif self.data.ndim == 1 and other.data.ndim == 2:
+                    # (k,) @ (k,n) -> (n,)
+                    grad_self = grad_output @ other.data.T
+                    grad_other = np.outer(self.data, grad_output)
+                    self._add_grad(grad_self)
+                    other._add_grad(grad_other)
+
+                #* Case 3: Matrix @ Matrix
+                else:
+                    grad_self = grad_output @ other.data.T
+                    grad_other = self.data.T @ grad_output
+                    self._add_grad(grad_self)
+                    other._add_grad(grad_other)
+
+            # # Case 1: Matrix @ Vector
+            # if self.data.ndim == 2 and other.data.ndim == 1:
+            #     # (m,k) @ (k,) -> (m,)
+            #     if self.requires_grad:
+            #         # dX = outer(grad_output, w)
+            #         grad_self = np.outer(grad_output, other.data)
+            #         self._add_grad(grad_self)
+
+            #     if other.requires_grad:
+            #         # dw = X^T @ grad_output
+            #         grad_other = self.data.T @ grad_output
+            #         other._add_grad(grad_other)
+                    
+            # # Case 2: Vector @ Matrix
+            # else:
+            #     if self.requires_grad:
+            #         grad_self = np.matmul(
+            #             grad_output,
+            #             np.swapaxes(other.data, -1, -2)
+            #         )
+            #         self._add_grad(grad_self)
+
+            #     if other.requires_grad:
+            #         grad_other = np.matmul(
+            #             np.swapaxes(self.data, -1, -2),
+            #             grad_output
+            #         )
+            #         other._add_grad(grad_other)
 
         result._backward = _backward
         return result
@@ -504,8 +527,8 @@ class Tensor:
                         device=self.device)
         
         def _backward():
-            if not self.requires_grad or result.grad:
-                return 
+            if not self.requires_grad:
+                return
                 
             # transpose gradient back
             grad_input = np.transpose(result.grad, axis)
