@@ -161,6 +161,7 @@ class BPETokenizer(Tokenizer):
         Splits text into words and punctuation while preserving 
         essential boundaries.
         """
+        #* split the text into words and punctuations.
         return re.findall(r'\w+|[^\w\s]', text)
         
     def _get_word_tokens(self, word: str) -> List[str]:
