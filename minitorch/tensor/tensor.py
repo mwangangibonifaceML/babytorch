@@ -358,35 +358,6 @@ class Tensor:
                     self._add_grad(grad_self)
                     other._add_grad(grad_other)
 
-            # # Case 1: Matrix @ Vector
-            # if self.data.ndim == 2 and other.data.ndim == 1:
-            #     # (m,k) @ (k,) -> (m,)
-            #     if self.requires_grad:
-            #         # dX = outer(grad_output, w)
-            #         grad_self = np.outer(grad_output, other.data)
-            #         self._add_grad(grad_self)
-
-            #     if other.requires_grad:
-            #         # dw = X^T @ grad_output
-            #         grad_other = self.data.T @ grad_output
-            #         other._add_grad(grad_other)
-                    
-            # # Case 2: Vector @ Matrix
-            # else:
-            #     if self.requires_grad:
-            #         grad_self = np.matmul(
-            #             grad_output,
-            #             np.swapaxes(other.data, -1, -2)
-            #         )
-            #         self._add_grad(grad_self)
-
-            #     if other.requires_grad:
-            #         grad_other = np.matmul(
-            #             np.swapaxes(self.data, -1, -2),
-            #             grad_output
-            #         )
-            #         other._add_grad(grad_other)
-
         result._backward = _backward
         return result
     
@@ -609,9 +580,9 @@ class Tensor:
         return cls(data=data, requires_grad=requires_grad, dtype=dtype, device=device)
     
     @classmethod
-    def rand(cls, shape, requires_grad=False, dtype='float32', device=None) -> Tensor:
+    def rand(cls, high: float , low: float, shape: tuple[int, ...], requires_grad=False, dtype='float32', device=None) -> Tensor:
         """Create a Tensor filled with random values from a uniform distribution."""
-        data = np.random.rand(*shape).astype(dtype)
+        data = np.random.uniform(low, high, size=shape).astype(dtype)
         return cls(data=data, requires_grad=requires_grad, dtype=dtype, device=device)
 
     @classmethod
