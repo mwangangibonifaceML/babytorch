@@ -599,3 +599,11 @@ class Tensor:
         """Create a Tensor filled with a constant value."""
         data = np.full(shape, value, dtype=dtype)
         return cls(data=data, requires_grad=requires_grad, dtype=dtype, device=device)
+    
+    @classmethod
+    def tril(cls, input: Tensor, diagonal=0, requires_grad=False, dtype='float32', device=None) -> Tensor:
+        """Return the lower triangular part of a matrix (2D tensor) or batch of matrices."""
+        if input.data.ndim < 2:
+            raise ValueError("Input must be at least 2D for tril operation.")
+        data = np.tril(input.data, k=diagonal).astype(dtype)
+        return cls(data=data, requires_grad=requires_grad, dtype=dtype, device=device)
