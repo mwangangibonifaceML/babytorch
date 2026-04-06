@@ -316,6 +316,15 @@ class BPETokenizer(Tokenizer):
         return current_tokens
     
     def encode(self, text: str)-> List[int]:
+        """
+        Encode a sentence into token ids
+
+        Args:
+            text (str): sentence to encode
+
+        Returns:
+            List[int]: a list token ids from the sentence
+        """
         words = text.split()
         all_tokens = []
         
@@ -330,6 +339,22 @@ class BPETokenizer(Tokenizer):
             tokens_ids.append(id)
         
         return tokens_ids
+    
+    def encode_batch(self, texts: List[str]) -> List[List[int]]:
+        """
+        Encode a batch of text
+
+        Args:
+            texts (List[str]): List of sentences to encode
+
+        Returns:
+            List[List[int]]: List token ids for each sentence
+        """
+        batch_ids = []
+        for text in texts:
+            tokens_ids = self.encode(text)
+            batch_ids.extend(tokens_ids)
+        return batch_ids
     
     def decode(self, token_ids: List[int]) -> str:
         #* return empty string id token mapping doesn't exist
