@@ -18,7 +18,7 @@ def _compute_attention_scores(query: Tensor, key: Tensor) -> Tensor:
         A tensor of shape (batch_size, seq_length, head_dim) representing the attention scores.
     """
     #* Compute the dot product of the query and key tensors
-    scores = query @ key.transpose(2, 3)  # (batch_size, seq_length, seq_length)
+    scores = query @ key.transpose(2, 3)  # (batch_size,num_heads, seq_length, seq_length)
     return scores
 
 def _scale_scores(scores: Tensor, head_dim: int) -> Tensor:
@@ -127,6 +127,7 @@ class MultiHeadAttention:
         
         #* Output linear projection
         self.out_proj = Linear(embed_dim, embed_dim)        
+        
     def _split_heads(self, X: Tensor) -> Tensor:
         """
         Split the input tensor into multiple heads.
@@ -182,7 +183,7 @@ class MultiHeadAttention:
         V = self._split_heads(V) #* (V.shape: (batch_size, n_heads, seq_length, head_dim))
         
         #* apply the scaled-dot-product attention
-        if mask and len(mask) == 3:
+        if mask and len(mask.shape) == 3:
             mask_batch_size,mask_seq_len,_ = mask.shape
             mask_reshaped = mask.reshape(mask_batch_size, 1, mask_seq_len,mask_seq_len)
             attended, _ = scaled_dot_product_attention(Q,K,V, mask_reshaped)
