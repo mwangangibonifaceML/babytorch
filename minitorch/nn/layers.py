@@ -44,9 +44,8 @@ class Parameter(Tensor):
     Args:
         Tensor (Tensor): Input tensor to convert to a parameter
     """
-    def __init__(self, data: Tensor):
-        assert isinstance(data, Tensor), 'Data must be an instance of Tensor.'
-        super().__init__(data.data, requires_grad=True)
+    def __init__(self, data: np.ndarray) -> None:
+        super().__init__(data, requires_grad=True)
         
     def zero_grad(self):
         if self.grad is not None:
@@ -188,10 +187,13 @@ class Linear(Layer):
         scale = (XAVIER_SCALE_FACTOR / in_features) ** 0.5 if xaiver_init else \
             (HE_SCALE_FACTOR / in_features) ** 0.5
             
-        self.weight = Tensor(np.random.randn(out_features, in_features) * scale, requires_grad=True)
+        self.weight = Tensor(
+            np.random.randn(out_features, in_features) * scale,
+            requires_grad=True
+        )
         
         if bias == True:
-            self.bias = Tensor.zeros(shape=out_features, requires_grad=True)
+            self.bias = Tensor(np.zeros(out_features, dtype='float32'), requires_grad=True)
             
         else:
             self.bias = None
@@ -348,8 +350,10 @@ class LayerNormalization(Layer):
             
         self.dim = num_features
         self.eps = eps
-        self.weight = Parameter(Tensor(np.ones(shape=self.dim)))
-        self.bias = Parameter(Tensor(np.zeros(shape=self.dim)))
+        
+        #* Learnable parameters: scale and shift
+        self.weight = Tensor.ones(shape=self.dim, requires_grad=True)
+        self.bias = Tensor.zeros(shape=self.dim, requires_grad=True)
         
     def forward(self, X: Tensor) -> Tensor:
         assert X.shape[-1] == self.dim,\
@@ -357,8 +361,44 @@ class LayerNormalization(Layer):
             
         mean = X.mean(axis=-1, keepdims=True)
         var = X.var(axis=-1, keepdims=True)
-        norm = (X - mean) / ((var + self.eps) ** 0.5)
-        shifted_norm = self.weight * norm + self.bias
+        std_data = (var + self.eps) ** 0.5
+        
+        norm = (X - mean) / std_data
+        shifted_norm = Tensor(self.weight.data * norm.data + self.bias.data,
+                            _parents = (norm, self.weight, self.bias),
+                            requires_grad=True,
+                            dtype= X.dtype)
+        
+        # def _backward():
+        #     grad_output = shifted_norm.grad
+            
+        #     if not shifted_norm.requires_grad:
+        #         return 
+        
+        #     #* gradient of self.bias : sum over all axis except last one
+        #     # print(shifted_norm.grad)
+        #     print(self.bias.grad)
+        #     print(self.weight.grad)
+        #     self_bias_grad = grad_output.copy()
+        #     # while self_bias_grad.ndim > 1:
+        #     self_bias_grad = self_bias_grad.sum(axis=0)
+        #     self.bias.grad += self_bias_grad
+            
+        #     #* gradient of self.weight: sum(grad_output * norm)
+        #     self_weight_grad = (grad_output * norm).copy()
+        #     # while self_weight_grad.ndim > 1:
+        #     self_weight_grad = self_weight_grad.sum(axis=0)
+        #     self.weight.grad.dtype = np.float32
+        #     self.weight.grad += self_weight_grad
+                
+        #     #* gradient of X: sum(grad_output * self.weight)
+        #     grad_norm = (grad_output.data * self.weight.data).copy()
+        #     mean_grad = np.mean(grad_norm, axis=-1, keepdims=True)
+        #     mean_grad_norm= np.mean(grad_norm * norm.data, axis=-1, keepdims=True)
+        #     grad_x = (1.0 / std_data.data) * (grad_norm - mean_grad - norm.data * mean_grad_norm)
+        #     X.grad += (grad_x.data)
+        
+        # shifted_norm._backward = _backward
         return shifted_norm
     
     def __call__(self, input: Tensor, ) -> Tensor:
@@ -388,8 +428,8 @@ class BatchNormalization(Layer):
         self.momentum = momentum
         
         #* learnable parameters
-        self.weight = Parameter(Tensor(np.ones(shape=self.dim)))
-        self.bias = Parameter(Tensor(np.zeros(shape=self.dim)))
+        self.weight = Parameter(np.ones(shape=self.dim))
+        self.bias = Parameter(np.zeros(shape=self.dim))
         
         #* running mean and var (statistics not learnable)
         self.running_mean = Tensor(np.zeros(shape=self.dim))
@@ -426,6 +466,8 @@ class BatchNormalization(Layer):
         
         x_hat = (X - mean) / ((var + self.eps) **0.5)
         out = self.weight * x_hat + self.bias
+        
+        #* ################ NO BACKWARD YET ###################
         return out
     
 class Flatten:

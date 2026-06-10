@@ -6,7 +6,7 @@
 
 from __future__ import annotations
 import numpy as np
-from typing import Union, Optional, List, Any
+from typing import Union, Optional, List, Any, Set, Tuple
 from numpy.typing import NDArray
 
 #* Constants for memory calculations
@@ -42,24 +42,21 @@ class Tensor:
 
     This class focuses on: data, shape, and basic operations.
     """
-    def __init__(self, data, requires_grad=False, dtype='float32', device=None, _parents= tuple()):
-        if isinstance(data, Tensor):
-            if dtype is None:
-                dtype = data.dtype
-            self.data = data.data.astype(dtype)
-            self.requires_grad = data.requires_grad
-            self.device = data.device
-            self._parents = data._parents
-        elif isinstance(data, np.ndarray):
-            self.data = data.astype(dtype)
-        else:
-            self.data = np.array(data, dtype=dtype)
-        
+    def __init__(self, 
+                data: NDArray,
+                requires_grad=False,
+                dtype=np.float32,
+                device: str =None,
+                _parents: Tuple['Tensor'] = tuple()) -> None:
+        assert isinstance(data, (np.float32, np.float64, np.ndarray)), f'Data must be a numpy array, you provided {type(data)}'
+        self.data = data
         self.requires_grad = requires_grad    
         self.device = device if device is not None else 'cpu'
         self._parents = _parents
-        self.grad = np.zeros(self.data.shape, dtype='float32')
+        self.grad = np.zeros_like(self.data, dtype=np.float32) if requires_grad else None
         self._backward = lambda: None
+        # self.shape = data.shape
+        # self.dtype = dtype
         
     def __repr__(self) -> str:
         return f"Tensor(data={self.data}, shape={self.shape}, grad_info= {self.requires_grad})"
@@ -85,7 +82,7 @@ class Tensor:
         wrap it in Tensor class
         """
         if not isinstance(x, Tensor):
-            return Tensor(x)
+            x = Tensor(np.array(x))
         return x
     
     def numpy(self)-> np.ndarray:
@@ -192,8 +189,7 @@ class Tensor:
         
     def __sub__(self, other)-> Tensor:
         """Subtract two tensors element-wise."""
-        if not isinstance(other, Tensor):
-            other = Tensor(other)
+        other = Tensor.__ensure_tensor(other)
         result = Tensor(self.data - other.data,
                     requires_grad= self._determine_gradient_requirement(other),
                     _parents=(self,other),
@@ -212,8 +208,7 @@ class Tensor:
         
     def __truediv__(self, other)-> Tensor:
         """Divide two tensors element-wise."""
-        if not isinstance(other, Tensor):
-            other = Tensor(other)
+        other = Tensor.__ensure_tensor(other)
         result = Tensor(self.data / other.data,
                         requires_grad= self._determine_gradient_requirement(other),
                         _parents=(self,other),
@@ -247,8 +242,7 @@ class Tensor:
         return result
     
     def __rsub__(self, other):
-        if not isinstance(other, Tensor):
-            other = Tensor(other)
+        other = Tensor.__ensure_tensor(other)
         result = Tensor(other - self.data,
                         requires_grad=self._determine_gradient_requirement(other),
                         _parents=(self,),
@@ -265,8 +259,7 @@ class Tensor:
         return result
 
     def __rtruediv__(self, other):
-        if not isinstance(other, Tensor):
-            other = Tensor(other)
+        other = Tensor.__ensure_tensor(other)
         result = Tensor(other / self.data,
                         requires_grad=self._determine_gradient_requirement(other),
                         _parents=(self, other),
@@ -300,7 +293,7 @@ class Tensor:
     
 
     def matmul(self, other) -> "Tensor":
-        other = other if isinstance(other, Tensor) else Tensor(other)
+        other = Tensor.__ensure_tensor(other)
 
         if self.data.ndim == 0 or other.data.ndim == 0: #* 1D or scalar case, fallback to element-wise multiplication
             result = Tensor(
@@ -607,3 +600,24 @@ class Tensor:
             raise ValueError("Input must be at least 2D for tril operation.")
         data = np.tril(input.data, k=diagonal).astype(dtype)
         return cls(data=data, requires_grad=requires_grad, dtype=dtype, device=device)
+    
+    
+if __name__ == "__main__":
+    #* Example usage
+    a = Tensor(np.array([[1, 2], [3, 4]], dtype=np.float32), requires_grad=True)
+    b = Tensor(np.array([[5, 6], [7, 8]], dtype=np.float32), requires_grad=True)
+    
+    #* test operations
+    #? multiplication
+    c = a @ b
+    
+    print('Tensor c:', c)
+    print(c.dtype, c.shape, c.requires_grad)
+    
+    #? addition
+    d = a + b
+    print('Tensor d:', d)
+    
+    #? substraction
+    e = d + c
+    print('Tensor e: ', e)

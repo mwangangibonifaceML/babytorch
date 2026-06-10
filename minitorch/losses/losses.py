@@ -85,7 +85,7 @@ class SoftMaxCrossEntropy(Loss):
         pass
     
     def __call__(self, logits: Tensor, targets: Tensor) -> Tensor:
-        np_loss = self.forward(logits, targets)
+        np_loss = self.forward(logits, targets).data
         return Tensor(np_loss, requires_grad=True)
     
     def forward(self, logits: Tensor, targets: Tensor) -> np.any:
