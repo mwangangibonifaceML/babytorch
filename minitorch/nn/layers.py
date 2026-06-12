@@ -65,7 +65,7 @@ class Parameter(Tensor):
                 )
 
 
-class Layer:
+class Module:
     """Base class for all layers in the neural network.
     
     All layers should inherit from this class and implement the forward and backward methods.
@@ -147,7 +147,7 @@ class Layer:
         """String representation of the layer."""
         return f"{self.__class__.__name__}()"
     
-class Linear(Layer):
+class Linear(Module):
     """A fully connected linear layer: implements: y = xW + b. 
     
     Applies a linear transformation to the incoming data.
@@ -179,7 +179,6 @@ class Linear(Layer):
     
     def __init__(self, in_features: int, out_features: int, bias=False, xaiver_init: bool=True) -> None:
         self.in_features = in_features
-        self.out_features = out_features
         
         #* Xavier initialization for stable gradients
         #* He initialization for ReLU/GELU activations
@@ -188,12 +187,12 @@ class Linear(Layer):
             (HE_SCALE_FACTOR / in_features) ** 0.5
             
         self.weight = Tensor(
-            np.random.randn(out_features, in_features) * scale,
+            np.random.rand(in_features, out_features) * scale,
             requires_grad=True
         )
         
         if bias == True:
-            self.bias = Tensor(np.zeros(out_features, dtype='float32'), requires_grad=True)
+            self.bias = Tensor.zeros(out_features, requires_grad=True)
             
         else:
             self.bias = None
@@ -208,9 +207,10 @@ class Linear(Layer):
             Tensor: The output tensor of shape (batch_size, out_features).
         """
         if self.bias is None:
-            return input @ self.weight.transpose()
+        
+            return input @ self.weight
         else:
-            return input @ self.weight.transpose() + self.bias
+            return input @ self.weight + self.bias
     
     def parameters(self) -> list[Tensor]:
         """Returns the parameters of the linear layer.
@@ -226,9 +226,31 @@ class Linear(Layer):
         """String representation of the linear layer."""
         bias_str = ", bias=True" if self.bias is not None else ""
         return (f"Linear(in_features={self.in_features}, "
-                f"out_features={self.out_features}{bias_str})")
+                f"bias={bias_str})")
+        
+class Layer(Module):
+    """
+    Initializa a Linear Layer in a multi-layer perceptron. Takes single neuron and stacks 
+    it onto other neurons to form a layer
+
+    """
     
-class Dropout(Layer):
+    def __init__(self, in_features: int, out_features: int, num_neurons: int, bias=False) -> None:
+        super().__init__()
+        self.neurons = [Linear(in_features, out_features, bias=bias) for _ in range(num_neurons)]
+        
+    def __call__(self, input: Tensor) -> Tensor:
+        out = [neuron(input) for neuron in self.neurons]
+        return out
+
+    
+    def parameters(self) -> List[Tensor]:
+        return [neuron.parameters() for neuron in self.neurons]
+    
+    def __repr__(self)-> str:
+        return f'Layer(number of neuron: {len(self.neurons)})'
+    
+class Dropout(Module):
     """Initialize dropout layer.
     Args:
         p (float): Probability of dropping a unit. Must be in the range [0.0, 1.0).
