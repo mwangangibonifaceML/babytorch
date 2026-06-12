@@ -496,12 +496,12 @@ class Flatten:
     def __init__(self)-> None:
         pass 
     
-    def forward(self, input: Tensor) -> Tensor:
-        input_reshape = input.reshape(1,-1)
+    def forward(self, input: Tensor, shape: Tuple[int, int]) -> Tensor:
+        input_reshape = input.reshape(shape[0], shape[1])
         return input_reshape
     
-    def __call__(self, input:Tensor) -> Any:
-        return self.forward(input)
+    def __call__(self, input:Tensor, shape: Tuple[int, int]) -> Any:
+        return self.forward(input, shape)
     
     
     

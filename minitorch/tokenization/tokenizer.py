@@ -15,6 +15,7 @@ class Tokenizer:
     #* predefined tokens
     TOKEN_UNKNOWN= "<UNK>"
     TOKEN_EOT = "<EOT>"
+    TOKEN_SOT = "<SOT>"
     
     def encode(self, text: str) -> List[int]:
         """
@@ -75,6 +76,10 @@ class CharTokenizer(Tokenizer):
         # Add special tokens to the vocabulary
         self._add_token(self.TOKEN_UNKNOWN)
         self._add_token(self.TOKEN_EOT)
+        self._add_token(self.TOKEN_SOT)
+        
+        #* vocabulary builder flag
+        self.is_vocab_built = False
         
     def _add_token(self, token: str) -> None:
         """
@@ -98,12 +103,24 @@ class CharTokenizer(Tokenizer):
             corpus (List[str]): A list of text samples to build the vocabulary from.
         """
         #* lower case and strip whitespace from each text sample
+        all_chars = set() #* ensures that there are no duplicates
+        
+        if not corpus:
+            raise ValueError(
+                """Corpus cannot be empty. Please provide a valid corpus for building the vocabulary."""
+            )
+            
         corpus = [text.lower().strip() for text in corpus]
         
         #* Iterate through each text sample and add each character to the vocabulary
         for text in corpus:
-            for char in text:
+            all_chars.update(text)
+            
+            for char in sorted(all_chars):
                 self._add_token(char)
+                
+        #* update vocab builder flag
+        self.is_vocab_built = True
                 
     def encode(self, text: str) -> List[int]:
         """
@@ -115,10 +132,19 @@ class CharTokenizer(Tokenizer):
         Returns:
             List[int]: A list of token IDs corresponding to the input text.
         """
-        token_ids = []
-        for char in text:
-            token_id = self.char_to_id.get(char, self.char_to_id[self.TOKEN_UNKNOWN])
-            token_ids.append(token_id)
+        if not self.is_vocab_built:
+            raise RuntimeError(
+                'Vocabulary not built. call build_vocab() first.'
+            )
+            
+        token_ids: List[int] = [self.char_to_id[self.TOKEN_SOT]]
+        
+        for word in text.lower():
+            for char in word:
+                token_id = self.char_to_id.get(char, self.char_to_id[self.TOKEN_UNKNOWN])
+                token_ids.append(token_id)
+                
+        token_ids.append(self.char_to_id[self.TOKEN_EOT])
         return token_ids
     
     def decode(self, token_ids: List[int]) -> str:
@@ -131,9 +157,9 @@ class CharTokenizer(Tokenizer):
         Returns:
             str: A string of text obtained from the token IDs.
         """
-        chars = []
+        chars: List[str] = []
         for token_id in token_ids:
-            char = self.id_to_char.get(token_id, 0)
+            char = self.id_to_char.get(token_id, self.TOKEN_UNKNOWN)
             chars.append(char)
         return ''.join(chars)
     
@@ -156,6 +182,9 @@ class BPETokenizer(Tokenizer):
         self.ids_to_tokens:  Dict[int, str] = {}
         self.merges:         List[Tuple[str, str]] = []
         
+        #* training flag
+        self.is_trained = False
+        
     def pre_tokenize(self, text: str) -> List[str]:
         """
         Splits text into words and punctuation while preserving 
@@ -175,11 +204,13 @@ class BPETokenizer(Tokenizer):
             List[str]: Individual tokens from a word
         """
         tokens = list(word)
+        if len(tokens) == 0:
+            return []
         tokens[-1] += Tokenizer.TOKEN_EOT
         return tokens
     
     
-    def train(self, corpus: List[str], vocab_size: int):
+    def train(self, corpus: List[str]):
         """
         Train the BPE to learn pairs and merge them.
         
@@ -197,10 +228,10 @@ class BPETokenizer(Tokenizer):
             raise ValueError("Corpus cannot be empty. Please provide a valid corpus for training.")
         
         for sentence in corpus:
-            full_corpus.extend(self.pre_tokenize(sentence))
+            full_corpus.extend(self.pre_tokenize(sentence.lower()))
 
-        if vocab_size:
-            self.vocab_size = vocab_size
+        # if vocab_size:
+        #     self.vocab_size = vocab_size
             
         #* count word occurences in the corpus to get the frequency of each word
         word_freq: Counter = Counter(full_corpus)
@@ -233,6 +264,8 @@ class BPETokenizer(Tokenizer):
             self.vocab.append(new_token)
             
         self._build_mapping()
+        
+        self.is_trained = True
         
     def _build_mapping(self):
         """
@@ -325,7 +358,12 @@ class BPETokenizer(Tokenizer):
         Returns:
             List[int]: a list token ids from the sentence
         """
-        words = text.split()
+        if not self.is_trained:
+            raise RuntimeError(
+                'Tokenizer not trained. call train() first.'
+            )
+            
+        words = self.pre_tokenize(text.lower())
         all_tokens = []
         
         for word in words:
@@ -335,7 +373,8 @@ class BPETokenizer(Tokenizer):
         
         tokens_ids = []
         for token in all_tokens:
-            id = self.tokens_to_ids.get(token, 0)
+            id = self.tokens_to_ids.get(token,
+                self.tokens_to_ids[Tokenizer.TOKEN_UNKNOWN])
             tokens_ids.append(id)
         
         return tokens_ids
@@ -353,7 +392,8 @@ class BPETokenizer(Tokenizer):
         batch_ids = []
         for text in texts:
             tokens_ids = self.encode(text)
-            batch_ids.extend(tokens_ids)
+            # batch_ids.extend(tokens_ids)
+            batch_ids.append(tokens_ids)
         return batch_ids
     
     def decode(self, token_ids: List[int]) -> str:
