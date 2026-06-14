@@ -55,11 +55,11 @@ class Tensor:
         self._parents = _parents
         self.grad = np.zeros_like(self.data, dtype=np.float32) if requires_grad else None
         self._backward = lambda: None
-        # self.shape = data.shape
-        # self.dtype = dtype
         
     def __repr__(self) -> str:
-        return f"Tensor(data={self.data}, shape={self.shape}, grad_info= {self.requires_grad})"
+        return f"Tensor(data={self.data},
+                shape={self.shape}, 
+                grad_info= {self.requires_grad})"
     
     def __str__(self) -> str:
         return f"Tensor(data={self.data})"
@@ -144,7 +144,7 @@ class Tensor:
     def __add__(self, other)-> Tensor:
         """Add two tensors element-wise with broadcasting support
         """
-        other = Tensor.__ensure_tensor(other)
+        other = Tensor(other) if not isinstance(other, Tensor) else other
         result = Tensor(self.data + other.data,
                     requires_grad= self._determine_gradient_requirement(other),
                     _parents= (self, other),
@@ -166,7 +166,7 @@ class Tensor:
         
     def __mul__(self, other)-> Tensor:
         """Multiply two tensors element-wise (NOT matrix multiplication)."""
-        other = Tensor.__ensure_tensor(other)
+        other = Tensor(other) if not isinstance(other, Tensor) else other
         result = Tensor(
                     np.multiply(self.data , other.data),
                     requires_grad= self._determine_gradient_requirement(other),
@@ -189,7 +189,7 @@ class Tensor:
         
     def __sub__(self, other)-> Tensor:
         """Subtract two tensors element-wise."""
-        other = Tensor.__ensure_tensor(other)
+        other = Tensor(other) if not isinstance(other, Tensor) else other
         result = Tensor(self.data - other.data,
                     requires_grad= self._determine_gradient_requirement(other),
                     _parents=(self,other),
@@ -208,7 +208,7 @@ class Tensor:
         
     def __truediv__(self, other)-> Tensor:
         """Divide two tensors element-wise."""
-        other = Tensor.__ensure_tensor(other)
+        other = Tensor(other) if not isinstance(other, Tensor) else other
         result = Tensor(self.data / other.data,
                         requires_grad= self._determine_gradient_requirement(other),
                         _parents=(self,other),
@@ -242,7 +242,7 @@ class Tensor:
         return result
     
     def __rsub__(self, other):
-        other = Tensor.__ensure_tensor(other)
+        other = Tensor(other) if not isinstance(other, Tensor) else other
         result = Tensor(other - self.data,
                         requires_grad=self._determine_gradient_requirement(other),
                         _parents=(self,),
@@ -259,7 +259,7 @@ class Tensor:
         return result
 
     def __rtruediv__(self, other):
-        other = Tensor.__ensure_tensor(other)
+        other = Tensor(other) if not isinstance(other, Tensor) else other
         result = Tensor(other / self.data,
                         requires_grad=self._determine_gradient_requirement(other),
                         _parents=(self, other),
@@ -293,8 +293,7 @@ class Tensor:
     
 
     def matmul(self, other) -> "Tensor":
-        other = Tensor.__ensure_tensor(other)
-
+        other = Tensor(other) if not isinstance(other, Tensor) else other
         if self.data.ndim == 0 or other.data.ndim == 0: #* 1D or scalar case, fallback to element-wise multiplication
             result = Tensor(
                 self.data * other.data,

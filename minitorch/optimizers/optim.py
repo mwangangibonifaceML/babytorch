@@ -306,34 +306,3 @@ class AdamW(Optimizer):
             #* update the parameter
             param.data -= self.lr * m_hat / (np.sqrt(v_hat) + self.eps)
             param.data *= (1- self.weight_decay)
-
-        
-        
-        
-        
-        
-        
-        
-        
-        
-        
-        
-        
-        
-        
-        
-        
-        
-        
-        
-        
-        
-        
-        
-        
-        
-        
-        
-        
-        
-####################### Tests #############################

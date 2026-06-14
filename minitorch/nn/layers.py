@@ -141,7 +141,8 @@ class Module:
     
     def zero_grad(self):
         for p in self.parameters():
-            p.zero_grad()
+            p.grad = Tensor.zeros(p.shape)
+    
     
     def __repr__(self) -> str:
         """String representation of the layer."""
@@ -178,6 +179,7 @@ class Linear(Module):
     """
     
     def __init__(self, in_features: int, out_features: int, bias=False, xaiver_init: bool=True) -> None:
+        super().__init__()
         self.in_features = in_features
         
         #* Xavier initialization for stable gradients
@@ -189,10 +191,10 @@ class Linear(Module):
         self.weight = Tensor(
             np.random.rand(in_features, out_features) * scale,
             requires_grad=True
-        )
+            )
         
-        if bias == True:
-            self.bias = Tensor.zeros(out_features, requires_grad=True)
+        if bias:
+            self.bias = Tensor(np.zeros(out_features), requires_grad=True)
             
         else:
             self.bias = None
@@ -206,11 +208,9 @@ class Linear(Module):
         Returns:
             Tensor: The output tensor of shape (batch_size, out_features).
         """
-        if self.bias is None:
-        
-            return input @ self.weight
-        else:
+        if self.bias:
             return input @ self.weight + self.bias
+        return input @ self.weight
     
     def parameters(self) -> list[Tensor]:
         """Returns the parameters of the linear layer.
@@ -219,8 +219,8 @@ class Linear(Module):
             list[Tensor]: A list containing the weight and bias tensors.
         """
         if self.bias:
-            return self.weight, self.bias
-        return self.weight
+            return [self.weight, self.bias]
+        return [self.weight]
     
     def __repr__(self) -> str:
         """String representation of the linear layer."""
