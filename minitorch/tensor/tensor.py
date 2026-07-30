@@ -23,8 +23,8 @@ def unbroadcast(grad, shape):
         grad = grad.sum(axis=0)
         
     #* sum over the broadcasted dimension
-    for i, dim in enumerate(shape):
-        if dim == 1:
+    for i in range(len(shape)):
+        if shape[i] == 1 and grad.shape[i] >1:
             grad = grad.sum(axis=i, keepdims=True)
     return grad
 
@@ -48,7 +48,8 @@ class Tensor:
                 dtype=np.float32,
                 device: str =None,
                 _parents: Tuple['Tensor'] = tuple()) -> None:
-        assert isinstance(data, (np.float32, np.float64, np.ndarray)), f'Data must be a numpy array, you provided {type(data)}'
+        assert isinstance(data, (float, int, np.ndarray)),\
+            f'Data must be a float, int or a numpy array, you provided {type(data)}'
         self.data = data
         self.requires_grad = requires_grad    
         self.device = device if device is not None else 'cpu'
@@ -57,9 +58,7 @@ class Tensor:
         self._backward = lambda: None
         
     def __repr__(self) -> str:
-        return f"Tensor(data={self.data},
-                shape={self.shape}, 
-                grad_info= {self.requires_grad})"
+        return f"Tensor(data={self.data},shape={self.shape}, grad_info= {self.requires_grad})"
     
     def __str__(self) -> str:
         return f"Tensor(data={self.data})"
@@ -119,7 +118,7 @@ class Tensor:
             result_data,
             requires_grad=self.requires_grad,
             _parents=(self,),
-            dtype=self.dtype,
+            dtype='float32',
             device=self.device
         )
 
@@ -148,15 +147,15 @@ class Tensor:
         result = Tensor(self.data + other.data,
                     requires_grad= self._determine_gradient_requirement(other),
                     _parents= (self, other),
-                    dtype=self.dtype,
+                    dtype='float32',
                     device=self.device)
         
         def _backward():
             if self.requires_grad:
-                self._add_grad(unbroadcast(result.grad, self.shape))
+                self._add_grad(result.grad)
                 
             if other.requires_grad:
-                other._add_grad(unbroadcast(result.grad, other.shape))
+                other._add_grad(result.grad)
                 
         result._backward = _backward
         return result
@@ -171,7 +170,7 @@ class Tensor:
                     np.multiply(self.data , other.data),
                     requires_grad= self._determine_gradient_requirement(other),
                     _parents=(self,other),
-                    dtype=self.dtype,
+                    dtype='float32',
                     device=self.device)
         
         def _backward():
@@ -193,7 +192,7 @@ class Tensor:
         result = Tensor(self.data - other.data,
                     requires_grad= self._determine_gradient_requirement(other),
                     _parents=(self,other),
-                    dtype=self.dtype,
+                    dtype='float32',
                     device=self.device)
         
         def _backward():
@@ -212,7 +211,7 @@ class Tensor:
         result = Tensor(self.data / other.data,
                         requires_grad= self._determine_gradient_requirement(other),
                         _parents=(self,other),
-                        dtype=self.dtype,
+                        dtype='float32',
                         device=self.device)
         
         def _backward():
@@ -232,7 +231,7 @@ class Tensor:
         result = Tensor(-self.data,
                         requires_grad=self.requires_grad,
                         _parents=(self,),
-                        dtype=self.dtype,
+                        dtype='float32',
                         device=self.device)
         
         def _backward():
@@ -246,7 +245,7 @@ class Tensor:
         result = Tensor(other - self.data,
                         requires_grad=self._determine_gradient_requirement(other),
                         _parents=(self,),
-                        dtype=self.dtype,
+                        dtype='float32',
                         device=self.device)
         
         def _backward():
@@ -263,7 +262,7 @@ class Tensor:
         result = Tensor(other / self.data,
                         requires_grad=self._determine_gradient_requirement(other),
                         _parents=(self, other),
-                        dtype=self.dtype,
+                        dtype='float32',
                         device=self.device)
         
         def _backward():
@@ -282,7 +281,7 @@ class Tensor:
         result =  Tensor(self.data ** other,
                         requires_grad=self.requires_grad,
                         _parents=(self,),
-                        dtype=self.dtype,
+                        dtype='float32',
                         device=self.device)
         
         def _backward():
@@ -299,7 +298,7 @@ class Tensor:
                 self.data * other.data,
                 requires_grad=self._determine_gradient_requirement(other),
                 _parents=(self, other),
-                dtype=self.dtype,
+                dtype='float32',
                 device=self.device
             )
             
@@ -317,7 +316,7 @@ class Tensor:
                 result_data,
                 requires_grad=self._determine_gradient_requirement(other),
                 _parents=(self, other),
-                dtype=self.dtype,
+                dtype='float32',
                 device=self.device
             )
 
@@ -359,7 +358,7 @@ class Tensor:
         result =  Tensor(np.sum(self.data, axis=axis, keepdims= keepdims),
                     requires_grad= self.requires_grad,
                     _parents=(self,),
-                    dtype=self.dtype,
+                    dtype='float32',
                     device=self.device)
         
         def _backward():
@@ -391,7 +390,7 @@ class Tensor:
         result =  Tensor(np.array(np.mean(self.data, axis=axis, keepdims= keepdims)),
                     requires_grad= self.requires_grad,
                     _parents=(self,),
-                    dtype=self.dtype,
+                    dtype='float32',
                     device=self.device)
         
         def _backward():
@@ -405,7 +404,7 @@ class Tensor:
             np.array(np.var(self.data, axis=axis, keepdims=keepdims, ddof=1)),
             requires_grad=self.requires_grad, 
             _parents=(self,),
-            dtype=self.dtype,
+            dtype='float32',
             device=self.device)
         
         def _backward():
@@ -419,7 +418,7 @@ class Tensor:
         return Tensor(np.array(np.max(self.data, axis=axis, keepdims=keepdims)),
                     requires_grad= self.requires_grad, 
                     _parents=(self,),
-                    dtype=self.dtype,
+                    dtype='float32',
                     device=self.device)
     
     def reshape(self, *shape):
@@ -450,7 +449,7 @@ class Tensor:
         result = Tensor(reshaped_data, 
                         requires_grad=self.requires_grad,
                         _parents=(self,),
-                        dtype=self.dtype,
+                        dtype='float32',
                         device=self.device)
         
         def _backward():
@@ -486,7 +485,7 @@ class Tensor:
         result = Tensor(transposed_data,
                         requires_grad=self.requires_grad,
                         _parents=(self,),
-                        dtype=self.dtype,
+                        dtype='float32',
                         device=self.device)
         
         def _backward():
@@ -543,7 +542,7 @@ class Tensor:
             self.grad = np.zeros_like(self.data, dtype=np.float32)
             
         grad = unbroadcast(grad, self.shape)
-        self.grad = self.grad + grad
+        self.grad += grad
         
     @classmethod
     def from_numpy(cls,
