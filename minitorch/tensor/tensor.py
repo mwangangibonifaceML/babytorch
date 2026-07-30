@@ -48,8 +48,14 @@ class Tensor:
                 dtype=np.float32,
                 device: str =None,
                 _parents: Tuple['Tensor'] = tuple()) -> None:
-        assert isinstance(data, (float, int, np.ndarray)),\
-            f'Data must be a float, int or a numpy array, you provided {type(data)}'
+        assert isinstance(data, (float, int, list, tuple, np.ndarray, np.float32, np.float64)),\
+            f'Data must be a float, int, an iterable of either floats or integers or a numpy array, you provided {type(data)}'
+            
+        if isinstance(data, (float, int, list, tuple)):
+            data = np.array(data, dtype=dtype)
+        elif isinstance(data, np.ndarray):
+            data = data.astype(dtype)
+        
         self.data = data
         self.requires_grad = requires_grad    
         self.device = device if device is not None else 'cpu'
@@ -76,7 +82,7 @@ class Tensor:
         return self.data.dtype
     
     @staticmethod
-    def __ensure_tensor(x: Union[int, float, np.ndarray]) -> Tensor:
+    def _ensure_tensor(x: Union[int, float, np.ndarray]) -> Tensor:
         """Check whether an argument is a Tensor, if not
         wrap it in Tensor class
         """
@@ -118,7 +124,7 @@ class Tensor:
             result_data,
             requires_grad=self.requires_grad,
             _parents=(self,),
-            dtype='float32',
+            dtype=np.float32,
             device=self.device
         )
 
@@ -147,7 +153,7 @@ class Tensor:
         result = Tensor(self.data + other.data,
                     requires_grad= self._determine_gradient_requirement(other),
                     _parents= (self, other),
-                    dtype='float32',
+                    dtype=np.float32,
                     device=self.device)
         
         def _backward():
@@ -167,10 +173,10 @@ class Tensor:
         """Multiply two tensors element-wise (NOT matrix multiplication)."""
         other = Tensor(other) if not isinstance(other, Tensor) else other
         result = Tensor(
-                    np.multiply(self.data , other.data),
+                    self.data * other.data,
                     requires_grad= self._determine_gradient_requirement(other),
                     _parents=(self,other),
-                    dtype='float32',
+                    dtype=np.float32,
                     device=self.device)
         
         def _backward():
@@ -192,7 +198,7 @@ class Tensor:
         result = Tensor(self.data - other.data,
                     requires_grad= self._determine_gradient_requirement(other),
                     _parents=(self,other),
-                    dtype='float32',
+                    dtype=np.float32,
                     device=self.device)
         
         def _backward():
@@ -211,7 +217,7 @@ class Tensor:
         result = Tensor(self.data / other.data,
                         requires_grad= self._determine_gradient_requirement(other),
                         _parents=(self,other),
-                        dtype='float32',
+                        dtype=np.float32,
                         device=self.device)
         
         def _backward():
@@ -231,7 +237,7 @@ class Tensor:
         result = Tensor(-self.data,
                         requires_grad=self.requires_grad,
                         _parents=(self,),
-                        dtype='float32',
+                        dtype=np.float32,
                         device=self.device)
         
         def _backward():
@@ -244,8 +250,8 @@ class Tensor:
         other = Tensor(other) if not isinstance(other, Tensor) else other
         result = Tensor(other - self.data,
                         requires_grad=self._determine_gradient_requirement(other),
-                        _parents=(self,),
-                        dtype='float32',
+                        _parents=(other,self),
+                        dtype=np.float32,
                         device=self.device)
         
         def _backward():
@@ -259,10 +265,10 @@ class Tensor:
 
     def __rtruediv__(self, other):
         other = Tensor(other) if not isinstance(other, Tensor) else other
-        result = Tensor(other / self.data,
+        result = Tensor(other.data / self.data,
                         requires_grad=self._determine_gradient_requirement(other),
                         _parents=(self, other),
-                        dtype='float32',
+                        dtype=np.float32,
                         device=self.device)
         
         def _backward():
@@ -281,7 +287,7 @@ class Tensor:
         result =  Tensor(self.data ** other,
                         requires_grad=self.requires_grad,
                         _parents=(self,),
-                        dtype='float32',
+                        dtype=np.float32,
                         device=self.device)
         
         def _backward():
@@ -298,7 +304,7 @@ class Tensor:
                 self.data * other.data,
                 requires_grad=self._determine_gradient_requirement(other),
                 _parents=(self, other),
-                dtype='float32',
+                dtype=np.float32,
                 device=self.device
             )
             
@@ -316,7 +322,7 @@ class Tensor:
                 result_data,
                 requires_grad=self._determine_gradient_requirement(other),
                 _parents=(self, other),
-                dtype='float32',
+                dtype=np.float32,
                 device=self.device
             )
 
@@ -325,30 +331,63 @@ class Tensor:
                 return
 
             grad_output = result.grad
-            if self.requires_grad and other.requires_grad:
-                #* Case 1: Matrix @ Vector
-                if self.data.ndim == 2 and other.data.ndim == 1:
-                    # (m,k) @ (k,) -> (m,)
+            #* Case 1: Matrix @ Vector
+            if self.data.ndim == 2 and other.data.ndim == 1:
+                # (m,k) @ (k,) -> (m,)
+                if self.requires_grad:
                     grad_self = np.outer(grad_output, other.data)
-                    grad_other = self.data.T @ grad_output
                     self._add_grad(grad_self)
+                if other.requires_grad:
                     other._add_grad(grad_other)
+                    grad_other = self.data.T @ grad_output
 
-                #* Case 2: Vector @ Matrix
-                elif self.data.ndim == 1 and other.data.ndim == 2:
-                    # (k,) @ (k,n) -> (n,)
+            #* Case 2: Vector @ Matrix
+            elif self.data.ndim == 1 and other.data.ndim == 2:
+                # (k,) @ (k,n) -> (n,)
+                if self.requires_grad:
                     grad_self = grad_output @ other.data.T
+                    self._add_grad(grad_self)
+                if other.requires_grad:
+                    other._add_grad(grad_other)
                     grad_other = np.outer(self.data, grad_output)
-                    self._add_grad(grad_self)
-                    other._add_grad(grad_other)
 
-                #* Case 3: Matrix @ Matrix
-                else:
+            #* Case 3: Matrix @ Matrix
+            elif self.data.ndim > 1 and other.data.ndim > 1:
+                # (m,k) @ (k,n) -> (m,n)
+                if self.requires_grad:
                     grad_self = grad_output @ other.data.T
-                    grad_other = self.data.T @ grad_output
                     self._add_grad(grad_self)
+                if other.requires_grad:
+                    grad_other = self.data.T @ grad_output
                     other._add_grad(grad_other)
-
+                
+            #* Case 4: Scalar @ Matrix
+            elif self.data.ndim == 0 and other.data.ndim == 2:
+                if self.requires_grad:
+                    grad_self = grad_output @ other.data.T
+                    self._add_grad(grad_self)
+                if other.requires_grad:
+                    grad_other = np.outer(self.data, grad_output)
+                    other._add_grad(grad_other)
+                
+            #* Case 5: Scalar @ vector
+            elif self.data.ndim == 0 and other.data.ndim == 1:
+                if self.requires_grad:
+                    grad_self = grad_output * other.data
+                    self._add_grad(grad_self)
+                if other.requires_grad:
+                    grad_other = grad_output * self.data
+                    other._add_grad(grad_other)
+                    
+            #* Case 6: Vector @ vector
+            elif self.data.ndim == 1 and other.data.ndim == 1:
+                if self.requires_grad:
+                    grad_self = grad_output * other.data
+                    self._add_grad(grad_self)
+                if other.requires_grad:
+                    grad_other = grad_output * self.data
+                    other._add_grad(grad_other)
+                                    
         result._backward = _backward
         return result
     
@@ -358,7 +397,7 @@ class Tensor:
         result =  Tensor(np.sum(self.data, axis=axis, keepdims= keepdims),
                     requires_grad= self.requires_grad,
                     _parents=(self,),
-                    dtype='float32',
+                    dtype=np.float32,
                     device=self.device)
         
         def _backward():
@@ -390,12 +429,35 @@ class Tensor:
         result =  Tensor(np.array(np.mean(self.data, axis=axis, keepdims= keepdims)),
                     requires_grad= self.requires_grad,
                     _parents=(self,),
-                    dtype='float32',
+                    dtype=np.float32,
                     device=self.device)
         
         def _backward():
-            if self.requires_grad:
-                self._add_grad(result.grad / self.data.size)
+            if result.grad is None:
+                return 
+            if not self.requires_grad:
+                return 
+                
+            grad_output = result.grad
+            if axis == None:
+                denom = self.size
+                grad_expanded = grad_output
+            else:
+                # compute denom as product of sizes on axis(es)
+                if isinstance(axis, int):
+                    axes = (axis,)
+                else:
+                    axes = tuple(axis)
+                denom = 1
+                for ax in axes:
+                    denom *= self.shape[ax]
+                # if keepdims False we need to insert dims back
+                if not keepdims:
+                    for ax in sorted(axes):
+                        grad_output = np.expand_dims(grad_output, ax)
+                grad_expanded = np.broadcast_to(grad_output, self.shape)
+                
+            self._add_grad(grad_expanded / denom)
         result._backward = _backward
         return result
     
@@ -404,7 +466,7 @@ class Tensor:
             np.array(np.var(self.data, axis=axis, keepdims=keepdims, ddof=1)),
             requires_grad=self.requires_grad, 
             _parents=(self,),
-            dtype='float32',
+            dtype=np.float32,
             device=self.device)
         
         def _backward():
@@ -418,7 +480,7 @@ class Tensor:
         return Tensor(np.array(np.max(self.data, axis=axis, keepdims=keepdims)),
                     requires_grad= self.requires_grad, 
                     _parents=(self,),
-                    dtype='float32',
+                    dtype=np.float32,
                     device=self.device)
     
     def reshape(self, *shape):
@@ -449,7 +511,7 @@ class Tensor:
         result = Tensor(reshaped_data, 
                         requires_grad=self.requires_grad,
                         _parents=(self,),
-                        dtype='float32',
+                        dtype=np.float32,
                         device=self.device)
         
         def _backward():
@@ -485,7 +547,7 @@ class Tensor:
         result = Tensor(transposed_data,
                         requires_grad=self.requires_grad,
                         _parents=(self,),
-                        dtype='float32',
+                        dtype=np.float32,
                         device=self.device)
         
         def _backward():
@@ -548,36 +610,36 @@ class Tensor:
     def from_numpy(cls,
                 array: NDArray,
                 requires_grad=False,
-                dtype='float32', device=None) -> Tensor:
+                dtype=np.float32, device=None) -> Tensor:
         """Create a Tensor from a NumPy array."""
         return cls(data=array, requires_grad=requires_grad, dtype=dtype, device=device)
         
     @classmethod
-    def zeros(cls, shape, requires_grad=False, dtype='float32', device=None) -> Tensor:
+    def zeros(cls, shape, requires_grad=False, dtype=np.float32, device=None) -> Tensor:
         """Create a Tensor filled with zeros."""
         data = np.zeros(shape, dtype=dtype)
         return cls(data=data, requires_grad=requires_grad, dtype=dtype, device=device)
     
     @classmethod
-    def ones(cls, shape, requires_grad=False, dtype='float32', device=None) -> Tensor:
+    def ones(cls, shape, requires_grad=False, dtype=np.float32, device=None) -> Tensor:
         """Create a Tensor filled with ones."""
         data = np.ones(shape, dtype=dtype)
         return cls(data=data, requires_grad=requires_grad, dtype=dtype, device=device)
     
     @classmethod
-    def randn(cls, shape, requires_grad=False, dtype='float32', device=None) -> Tensor:
+    def randn(cls, shape, requires_grad=False, dtype=np.float32, device=None) -> Tensor:
         """Create a Tensor filled with random values from a normal distribution."""
         data = np.random.randn(*shape).astype(dtype)
         return cls(data=data, requires_grad=requires_grad, dtype=dtype, device=device)
     
     @classmethod
-    def rand(cls, high: float , low: float, shape: tuple[int, ...], requires_grad=False, dtype='float32', device=None) -> Tensor:
+    def rand(cls, low: float, high: float, shape: tuple[int, ...], requires_grad=False, dtype=np.float32, device=None) -> Tensor:
         """Create a Tensor filled with random values from a uniform distribution."""
         data = np.random.uniform(low, high, size=shape).astype(dtype)
         return cls(data=data, requires_grad=requires_grad, dtype=dtype, device=device)
 
     @classmethod
-    def arange(cls, start, end=None, step=1, requires_grad=False, dtype='float32', device=None) -> Tensor:
+    def arange(cls, start, end=None, step=1, requires_grad=False, dtype=np.float32, device=None) -> Tensor:
         """Create a Tensor with values from start to end with a given step."""
         if end is None:
             end = start
@@ -586,13 +648,13 @@ class Tensor:
         return cls(data=data, requires_grad=requires_grad, dtype=dtype, device=device)
     
     @classmethod
-    def constant(cls, value, shape=(), requires_grad=False, dtype='float32', device=None) -> Tensor:
+    def constant(cls, value, shape=(), requires_grad=False, dtype=np.float32, device=None) -> Tensor:
         """Create a Tensor filled with a constant value."""
         data = np.full(shape, value, dtype=dtype)
         return cls(data=data, requires_grad=requires_grad, dtype=dtype, device=device)
     
     @classmethod
-    def tril(cls, input: Tensor, diagonal=0, requires_grad=False, dtype='float32', device=None) -> Tensor:
+    def tril(cls, input: Tensor, diagonal=0, requires_grad=False, dtype=np.float32, device=None) -> Tensor:
         """Return the lower triangular part of a matrix (2D tensor) or batch of matrices."""
         if input.data.ndim < 2:
             raise ValueError("Input must be at least 2D for tril operation.")
