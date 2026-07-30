@@ -1,4 +1,5 @@
 from __future__ import annotations
+
 import numpy as np
 from typing import Any
 from minitorch.activations.activations import ReLU, Sigmoid, Tanh
@@ -364,6 +365,7 @@ class LayerNormalization(Module):
     Normalizes across the last dimension of the input tensor
     """
     def __init__(self, dim: int, eps: float= EPSILON) -> None:
+        super().__init__()
         if not isinstance(dim, int) or dim <= 0:
             raise ValueError(
                 f"dim must be a positive integer, got {dim}"
@@ -373,49 +375,23 @@ class LayerNormalization(Module):
         self.eps = eps
         
         #* Learnable parameters: scale and shift
-        self.gamma = Tensor.ones(shape=self.dim, requires_grad=True)
-        self.beta = Tensor.zeros(shape=self.dim, requires_grad=True)
+        self.gamma = Parameter(np.ones(shape=self.dim))
+        self.beta = Parameter(np.zeros(shape=self.dim))
         
     def forward(self, X: Tensor) -> Tensor:
-        assert X.shape[-1] == self.dim,\
-            f'last dim of input should equal dim, received: {X.shape[1]} expected: {self.dim}'
+        if X.shape[-1] != self.dim,\
+            raise ValueError(
+                f'last dim of input should equal dim, received: {X.shape[-1]} expected: {self.dim}'
+            )
             
         mean = X.mean(axis=-1, keepdims=True)
         var = X.var(axis=-1, keepdims=True)
-        std_data = (var + self.eps) ** 0.5
+        std = (var + self.eps) ** 0.5
         
-        norm = (X - mean) / std_data
-        shifted_norm = Tensor(self.gamma.data * norm.data + self.beta.data,
-                            _parents = (norm, self.gamma, self.beta),
-                            requires_grad=True,
-                            dtype= X.dtype)
+        norm = (X - mean) / std
+        shifted_norm = self.gamma * norm + self.beta #* auto backward from Tensor operations
+                                                    #* therefore gamma.grad, beta.grad and norm.grad calculated automatically
         
-        def _backward():              
-            if not shifted_norm.requires_grad:
-                return
-            grad_output = shifted_norm.grad
-            
-            #* Case 1: result_grad w.r.t the beta
-            self.beta._add_grad(grad_output)
-            
-            #* Case 2: result w.r.t to the gamma
-            #* self.gamma.grad = output.grad * norm_data.data
-            grad_out = norm * grad_output
-            self.gamma._add_grad(grad_out)
-            
-            #* case 3: result_grad w.r.t to the input X
-            dx_hat = self.gamma.data * shifted_norm.grad
-            D = shifted_norm.grad.shape[1]
-            ivar = (1.0 / (var + self.eps) ** 0.5)
-            sum_dx_hat = np.sum(dx_hat, axis=1, keepdims=True)
-            sum_dx_hat_X_hat = np.sum(dx_hat * mean.data, axis=1, keepdims=True)
-            
-            X_grad = (1.0 / D) * ivar.data * (
-                D * dx_hat - sum_dx_hat - mean.data * sum_dx_hat_X_hat
-            )
-            X._add_grad(X_grad)
-        
-        shifted_norm._backward = _backward
         return shifted_norm
     
     def __call__(self, input: Tensor, ) -> Tensor:
@@ -454,9 +430,11 @@ class BatchNormalization(Module):
         self.running_var = Tensor(np.ones(shape=self.dim))
     
     def forward(self, X: Tensor) -> Tensor:
-        assert len(X.shape) == 2, \
-            f'Batch Normalization only supports 2D inputs (N,C), got shape {X.shape}'
-        
+        if len(X.shape) != 2:#, \
+            raise ValueError(
+                f'Batch Normalization only supports 2D inputs (N,C), got shape {X.shape}'
+            )
+            
         if X.shape[1] != self.dim:
             raise ValueError(
                 f"Expected: {self.dim} features, got: {X.shape[1]}"
@@ -467,14 +445,14 @@ class BatchNormalization(Module):
             batch_var = X.var(axis=0, keepdims=True)
             
             #* update running statistics
-            self.running_mean = (
-                (1 - self.momentum) * self.running_mean +
-                self.momentum * batch_mean.detach()
+            self.running_mean.data = (
+                (1 - self.momentum) * self.running_mean.data +
+                self.momentum * batch_mean.detach().data
             )
             
-            self.running_var = (
-                (1 - self.momentum) * self.running_var + 
-                self.momentum * batch_var.detach()
+            self.running_var.data = (
+                (1 - self.momentum) * self.running_var.data + 
+                self.momentum * batch_var.detach().data
             )
             mean = batch_mean
             var = batch_var
@@ -484,31 +462,6 @@ class BatchNormalization(Module):
         
         x_hat = (X - mean) / ((var + self.eps) **0.5)
         out = self.gamma * x_hat + self.beta
-        
-        def _backward():              
-            if not shifted_norm.requires_grad:
-                return
-            grad_output = out.grad
-            
-            #* Case 1: result_grad w.r.t the beta
-            self.beta._add_grad(grad_output)
-            
-            #* Case 2: result w.r.t to the gamma
-            #* self.gamma.grad = output.grad * norm_data.data
-            grad_out = grad_output * x_hat
-            self.gamma._add_grad(grad_out)
-            
-            #* case 3: result_grad w.r.t to the input X
-            dx_hat = self.gamma.data * out.grad
-            N = out.grad.shape[1]
-            ivar = (1.0 / (var + self.eps) ** 0.5)
-            sum_dx_hat = np.sum(dx_hat, axis=0, keepdims=True)
-            sum_dx_hat_X_hat = np.sum(dx_hat * mean.data, axis=0, keepdims=True)
-            
-            X_grad = (1.0 / N) * ivar.data * (
-                N * dx_hat - sum_dx_hat - mean.data * sum_dx_hat_X_hat
-            )
-            X._add_grad(X_grad)
         
         return out
     
