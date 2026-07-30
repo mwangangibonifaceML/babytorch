@@ -373,8 +373,8 @@ class LayerNormalization(Module):
         self.eps = eps
         
         #* Learnable parameters: scale and shift
-        self.weight = Tensor.ones(shape=self.dim, requires_grad=True)
-        self.bias = Tensor.zeros(shape=self.dim, requires_grad=True)
+        self.gamma = Tensor.ones(shape=self.dim, requires_grad=True)
+        self.beta = Tensor.zeros(shape=self.dim, requires_grad=True)
         
     def forward(self, X: Tensor) -> Tensor:
         assert X.shape[-1] == self.dim,\
@@ -385,41 +385,37 @@ class LayerNormalization(Module):
         std_data = (var + self.eps) ** 0.5
         
         norm = (X - mean) / std_data
-        shifted_norm = Tensor(self.weight.data * norm.data + self.bias.data,
-                            _parents = (norm, self.weight, self.bias),
+        shifted_norm = Tensor(self.gamma.data * norm.data + self.beta.data,
+                            _parents = (norm, self.gamma, self.beta),
                             requires_grad=True,
                             dtype= X.dtype)
         
-        # def _backward():
-        #     grad_output = shifted_norm.grad
+        def _backward():              
+            if not shifted_norm.requires_grad:
+                return
+            grad_output = shifted_norm.grad
             
-        #     if not shifted_norm.requires_grad:
-        #         return 
-        
-        #     #* gradient of self.bias : sum over all axis except last one
-        #     # print(shifted_norm.grad)
-        #     print(self.bias.grad)
-        #     print(self.weight.grad)
-        #     self_bias_grad = grad_output.copy()
-        #     # while self_bias_grad.ndim > 1:
-        #     self_bias_grad = self_bias_grad.sum(axis=0)
-        #     self.bias.grad += self_bias_grad
+            #* Case 1: result_grad w.r.t the beta
+            self.beta._add_grad(grad_output)
             
-        #     #* gradient of self.weight: sum(grad_output * norm)
-        #     self_weight_grad = (grad_output * norm).copy()
-        #     # while self_weight_grad.ndim > 1:
-        #     self_weight_grad = self_weight_grad.sum(axis=0)
-        #     self.weight.grad.dtype = np.float32
-        #     self.weight.grad += self_weight_grad
-                
-        #     #* gradient of X: sum(grad_output * self.weight)
-        #     grad_norm = (grad_output.data * self.weight.data).copy()
-        #     mean_grad = np.mean(grad_norm, axis=-1, keepdims=True)
-        #     mean_grad_norm= np.mean(grad_norm * norm.data, axis=-1, keepdims=True)
-        #     grad_x = (1.0 / std_data.data) * (grad_norm - mean_grad - norm.data * mean_grad_norm)
-        #     X.grad += (grad_x.data)
+            #* Case 2: result w.r.t to the gamma
+            #* self.gamma.grad = output.grad * norm_data.data
+            grad_out = norm * grad_output
+            self.gamma._add_grad(grad_out)
+            
+            #* case 3: result_grad w.r.t to the input X
+            dx_hat = self.gamma.data * shifted_norm.grad
+            D = shifted_norm.grad.shape[1]
+            ivar = (1.0 / (var + self.eps) ** 0.5)
+            sum_dx_hat = np.sum(dx_hat, axis=1, keepdims=True)
+            sum_dx_hat_X_hat = np.sum(dx_hat * mean.data, axis=1, keepdims=True)
+            
+            X_grad = (1.0 / D) * ivar.data * (
+                D * dx_hat - sum_dx_hat - mean.data * sum_dx_hat_X_hat
+            )
+            X._add_grad(X_grad)
         
-        # shifted_norm._backward = _backward
+        shifted_norm._backward = _backward
         return shifted_norm
     
     def __call__(self, input: Tensor, ) -> Tensor:
@@ -450,8 +446,8 @@ class BatchNormalization(Module):
         self.momentum = momentum
         
         #* learnable parameters
-        self.weight = Parameter(np.ones(shape=self.dim))
-        self.bias = Parameter(np.zeros(shape=self.dim))
+        self.gamma = Parameter(np.ones(shape=self.dim))
+        self.beta = Parameter(np.zeros(shape=self.dim))
         
         #* running mean and var (statistics not learnable)
         self.running_mean = Tensor(np.zeros(shape=self.dim))
@@ -487,9 +483,33 @@ class BatchNormalization(Module):
             var = self.running_var
         
         x_hat = (X - mean) / ((var + self.eps) **0.5)
-        out = self.weight * x_hat + self.bias
+        out = self.gamma * x_hat + self.beta
         
-        #* ################ NO BACKWARD YET ###################
+        def _backward():              
+            if not shifted_norm.requires_grad:
+                return
+            grad_output = out.grad
+            
+            #* Case 1: result_grad w.r.t the beta
+            self.beta._add_grad(grad_output)
+            
+            #* Case 2: result w.r.t to the gamma
+            #* self.gamma.grad = output.grad * norm_data.data
+            grad_out = grad_output * x_hat
+            self.gamma._add_grad(grad_out)
+            
+            #* case 3: result_grad w.r.t to the input X
+            dx_hat = self.gamma.data * out.grad
+            N = out.grad.shape[1]
+            ivar = (1.0 / (var + self.eps) ** 0.5)
+            sum_dx_hat = np.sum(dx_hat, axis=0, keepdims=True)
+            sum_dx_hat_X_hat = np.sum(dx_hat * mean.data, axis=0, keepdims=True)
+            
+            X_grad = (1.0 / N) * ivar.data * (
+                N * dx_hat - sum_dx_hat - mean.data * sum_dx_hat_X_hat
+            )
+            X._add_grad(X_grad)
+        
         return out
     
     def __call__(self, input: Tensor, ) -> Tensor:
