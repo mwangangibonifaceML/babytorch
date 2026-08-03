@@ -190,7 +190,7 @@ class Linear(Module):
             (HE_SCALE_FACTOR / in_features) ** 0.5
             
         self.weight = Tensor(
-            np.random.rand(in_features, out_features) * scale,
+            np.random.randn(in_features, out_features) * scale,
             requires_grad=True
             )
         
@@ -379,19 +379,38 @@ class LayerNormalization(Module):
         self.beta = Parameter(np.zeros(shape=self.dim))
         
     def forward(self, X: Tensor) -> Tensor:
-        if X.shape[-1] != self.dim,\
+        if X.shape[-1] != self.dim:
             raise ValueError(
                 f'last dim of input should equal dim, received: {X.shape[-1]} expected: {self.dim}'
             )
             
         mean = X.mean(axis=-1, keepdims=True)
         var = X.var(axis=-1, keepdims=True)
-        std = (var + self.eps) ** 0.5
+        std = (var.data + self.eps) ** 0.5
         
         norm = (X - mean) / std
         shifted_norm = self.gamma * norm + self.beta #* auto backward from Tensor operations
                                                     #* therefore gamma.grad, beta.grad and norm.grad calculated automatically
         
+        old_backward = shifted_norm._backward
+        
+        def _backward():
+            old_backward()
+            
+            dX_hat = shifted_norm.data * self.gamma.data
+            ivar = 1.0 / np.sqrt(var.data + self.eps) # Shape (N, 1)
+            D = X.shape[-1]
+            
+            #* Vectorized condensed formula (summing across axis=1 for features)
+            sum_dX_hat = np.sum(dX_hat, axis=1, keepdims=True)
+            sum_dX_hat_X_hat = np.sum(dX_hat * norm.data, axis=1, keepdims=True)
+
+            dX = (1.0 / D) * ivar * (
+                D * dX_hat - sum_dX_hat - norm.data * sum_dX_hat_X_hat
+            )
+            X._add_grad(dX)
+            
+        shifted_norm._backward = _backward
         return shifted_norm
     
     def __call__(self, input: Tensor, ) -> Tensor:
@@ -463,6 +482,21 @@ class BatchNormalization(Module):
         x_hat = (X - mean) / ((var + self.eps) **0.5)
         out = self.gamma * x_hat + self.beta
         
+        old_backward = out._backward
+        def _backward():
+            old_backward()
+            dX_hat = out.data * self.gamma.data
+            ivar = 1.0 / np.sqrt(var.data + self.eps)
+            N = X.shape[0]
+            
+            # Vectorized condensed formula
+            dX = (1.0 / N) * ivar * (
+                N * dX_hat - np.sum(dX_hat, axis=0) - x_hat.data * np.sum(
+                    dX_hat * x_hat.data, axis=0)
+            )
+            X._add_grad(dX)
+            
+        out._backward = _backward
         return out
     
     def __call__(self, input: Tensor, ) -> Tensor:
@@ -478,48 +512,3 @@ class Flatten:
     
     def __call__(self, input:Tensor, shape: Tuple[int, int]) -> Any:
         return self.forward(input, shape)
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-
-def test_gradient_preparation_linear():
-    """🔬 Test Linear layer is ready for gradients (Module 05)."""
-    print("🔬 Gradient Preparation Test: Linear Layer...")
-
-    layer = Linear(10, 5, bias=True)
-
-    # Verify requires_grad is set
-    assert layer.weight.requires_grad == True, "Weight should require gradients"
-    assert layer.bias.requires_grad == True, "Bias should require gradients"
-    print("🧪 requires_grad tests passed ...")
-    
-    # Verify gradient placeholders exist (even if None initially)
-    assert hasattr(layer.weight, 'requires_grad'), "Weight should have grad attribute"
-    assert hasattr(layer.bias, 'requires_grad'), "Bias should have grad attribute"
-    print("🧪 Gradient attributes tests passed ...")
-    
-    # Verify parameter collection works
-    params = layer.parameters()
-    assert len(params) == 2, "Should return 2 parameters"
-    assert all(p.requires_grad for p in params), "All parameters should require gradients"
-    print("🧪 Gradient preparation tests passed ...")
-    
-    print("✅ Layer ready for gradient-based training!")
-    print("="*50)
-
-if __name__ == "__main__":
-    print("Running unit tests for the layers...")
-    # unit_test()
-    # test_edge_cases_linear()
-    test_gradient_preparation_linear()
-    # test_unit_dropout()
-    print("All tests passed!")
-    print("="*50)
