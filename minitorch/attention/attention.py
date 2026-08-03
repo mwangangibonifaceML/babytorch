@@ -5,6 +5,7 @@ import numpy as np
 from typing import Tuple, Optional
 from minitorch.tensor.tensor import Tensor
 from minitorch.nn.layers import Linear
+from minitorch.activations.activations import Softmax
 
 def _compute_attention_scores(query: Tensor, key: Tensor) -> Tensor:
     """Compute the attention scores for a single head.
@@ -18,7 +19,8 @@ def _compute_attention_scores(query: Tensor, key: Tensor) -> Tensor:
         A tensor of shape (batch_size, seq_length, head_dim) representing the attention scores.
     """
     #* Compute the dot product of the query and key tensors
-    scores = query @ key.transpose(2, 3)  # (batch_size,num_heads, seq_length, seq_length)
+    scores = query @ key.transpose(-2,-1)  # (batch_size, seq_length, seq_length)
+    # print(f'Attention scores produced before scaling\n: {scores}')
     return scores
 
 def _scale_scores(scores: Tensor, head_dim: int) -> Tensor:
@@ -33,9 +35,10 @@ def _scale_scores(scores: Tensor, head_dim: int) -> Tensor:
     """
     #* Scale the scores by the square root of the head dimension
     scaled_scores = scores / math.sqrt(head_dim)
+    # print(f'Attention scores produced after scaling but before masking\n: {scaled_scores}')
     return scaled_scores
 
-def _apply_mask(scores: Tensor, mask: Tensor) -> Tensor:
+def _apply_mask(scores: Tensor) -> Tensor:
     """Apply a mask to the attention scores to prevent attending to future tokens.
 
     Args:
@@ -50,36 +53,21 @@ def _apply_mask(scores: Tensor, mask: Tensor) -> Tensor:
         A tensor of shape (batch_size, seq_length, seq_length) representing the masked attention scores.
     """
     #* Create a mask to prevent attending to future tokens
-    mask = Tensor.tril(mask, diagonal=0)  # (seq_length, seq_length)
-    masked_scores = scores + (Tensor.ones(mask.shape) - mask) * -1e9  # (batch_size, seq_length, seq_length)
+    masked_scores = Tensor.masked_fill(scores)  # (batch,seq_length, seq_length)
+    # print(f'Attention scores produced after scaling and masking\n: {masked_scores}')
     return masked_scores
-    
-def _softmax(scores: Tensor) -> Tensor:
-    """Apply the softmax function to the attention scores.
-
-    Args:
-        scores: A tensor of shape (batch_size, seq_length, seq_length) representing the attention scores.
-
-    Returns:
-        A tensor of shape (batch_size, seq_length, seq_length) representing the attention weights.
-    """
-    #* Apply the softmax function to the scores
-    exp_scores = np.exp(scores.data)  # (batch_size, seq_length, seq_length)
-    attention_weights = exp_scores / exp_scores.sum(axis=-1, keepdims=True)  # (batch_size, seq_length, seq_length)
-    return Tensor(attention_weights)
 
 def scaled_dot_product_attention(
     query: Tensor,
     key: Tensor, 
     value: Tensor,
-    mask: Optional[Tensor]= None) -> Tuple[Tensor, Tensor]:
+    ) -> Tuple[Tensor, Tensor]:
     """Compute the scaled dot-product attention.
 
     Args:
         query: A tensor of shape (batch_size, seq_length, head_dim) representing the query vectors.
         key: A tensor of shape (batch_size, seq_length, head_dim) representing the key vectors.
         value: A tensor of shape (batch_size, seq_length, head_dim) representing the value vectors.
-        mask: A tensor of shape (seq_length, seq_length) representing the mask.
 
     Returns:
         A tuple of output, attention_weights where: output is of 
@@ -87,16 +75,15 @@ def scaled_dot_product_attention(
         output of the attention mechanism, and attention_weights 
         is of shape (batch_size, seq_length, seq_length) representing the attention weights.
     """
+    softmax_fn = Softmax()
     scores = _compute_attention_scores(query, key)  # (batch_size, seq_length, seq_length)
     scaled_scores = _scale_scores(scores, query.shape[-1])  # (batch_size, seq_length, seq_length)
-    if mask is not None:
-        masked_scores = _apply_mask(scaled_scores, mask)  # (batch_size, seq_length, seq_length)
-        attention_weights = _softmax(masked_scores)  # (batch_size, seq_length, seq_length)
-        output = attention_weights @ value  # (batch_size, seq_length, head_dim)
-        
-    attention_weights = _softmax(scaled_scores)  # (batch_size, seq_length, seq_length)
+    masked_scores = _apply_mask(scaled_scores)  # (batch_size, seq_length, seq_length)
+    attention_weights = softmax_fn(masked_scores)  # (batch_size, seq_length, seq_length)
+    # print(f'Attention weights after softmaxing\n: {attention_weights}')
     output = attention_weights @ value  # (batch_size, seq_length, head_dim)
-    
+        
+    attention_weights = softmax_fn(scaled_scores)  # (batch_size, seq_length, seq_length)
     return output, attention_weights
 
 class MultiHeadAttention:
@@ -134,7 +121,6 @@ class MultiHeadAttention:
 
         Args:
             X (Tensor): Input tensor of shape (batch_size, seq_length, embed_dim)
-            seq_len (int): Sequence length of the input tensor
 
         Returns:
             Tensor: Reshaped tensor of shape (batch_size, n_heads, seq_length, head_dim)
@@ -172,24 +158,20 @@ class MultiHeadAttention:
         Returns:
             Tensor: Output tensor of shape (batch_size, seq_length, embed_dim) after applying multi-head attention
         """
+        
         #* Linear projections
         Q = self.q_proj(X)    # (batch_size, seq_length, embed_dim)
         K = self.k_proj(X)    # (batch_size, seq_length, embed_dim)
         V = self.v_proj(X)    # (batch_size, seq_length, embed_dim)
-        
+
         #* split the heads
         Q = self._split_heads(Q) #* (Q.shape: (batch_size, n_heads, seq_length, head_dim))
         K = self._split_heads(K) #* (K.shape: (batch_size, n_heads, seq_length, head_dim))
         V = self._split_heads(V) #* (V.shape: (batch_size, n_heads, seq_length, head_dim))
         
         #* apply the scaled-dot-product attention
-        if mask and len(mask.shape) == 3:
-            mask_batch_size,mask_seq_len,_ = mask.shape
-            mask_reshaped = mask.reshape(mask_batch_size, 1, mask_seq_len,mask_seq_len)
-            attended, _ = scaled_dot_product_attention(Q,K,V, mask_reshaped)
-        else:
-            attended, _ = scaled_dot_product_attention(Q,K,V)
-        #  scores = query @ key.transpose(1,2)  
+        attended, _ = scaled_dot_product_attention(Q,K,V)
+
         #* merge heads back together
         concatenated_output = self._merge_heads(attended)
         
