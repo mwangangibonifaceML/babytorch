@@ -80,10 +80,8 @@ def scaled_dot_product_attention(
     scaled_scores = _scale_scores(scores, query.shape[-1])  # (batch_size, seq_length, seq_length)
     masked_scores = _apply_mask(scaled_scores)  # (batch_size, seq_length, seq_length)
     attention_weights = softmax_fn(masked_scores)  # (batch_size, seq_length, seq_length)
-    # print(f'Attention weights after softmaxing\n: {attention_weights}')
     output = attention_weights @ value  # (batch_size, seq_length, head_dim)
-        
-    attention_weights = softmax_fn(scaled_scores)  # (batch_size, seq_length, seq_length)
+    
     return output, attention_weights
 
 class MultiHeadAttention:
