@@ -48,8 +48,10 @@ class Tensor:
                 dtype=np.float32,
                 device: str =None,
                 _parents: Tuple['Tensor'] = tuple()) -> None:
-        assert isinstance(data, (float, int, list, tuple, np.ndarray, np.float32, np.float64)),\
-            f'Data must be a float, int, an iterable of either floats or integers or a numpy array, you provided {type(data)}'
+        if not isinstance(data, (float, int, list, tuple, np.ndarray, np.float32, np.float64)):
+            raise ValueError(
+                f'Data must be a float, int, an iterable of either floats or integers or a numpy array, you provided {type(data)}'
+            )
             
         if isinstance(data, (float, int, list, tuple)):
             data = np.array(data, dtype=dtype)
@@ -64,7 +66,7 @@ class Tensor:
         self._backward = lambda: None
         
     def __repr__(self) -> str:
-        return f"Tensor(data={self.data},shape={self.shape}, grad_info= {self.requires_grad})"
+        return f"Tensor(data={self.data},shape={self.shape}, requires_grad= {self.requires_grad})"
     
     def __str__(self) -> str:
         return f"Tensor(data={self.data})"
@@ -82,13 +84,19 @@ class Tensor:
         return self.data.dtype
     
     @staticmethod
-    def _ensure_tensor(x: Union[int, float, np.ndarray]) -> Tensor:
+    def _ensure_tensor(x: Union[int, float, np.ndarray, Tensor]) -> Tensor:
         """Check whether an argument is a Tensor, if not
         wrap it in Tensor class
         """
-        if not isinstance(x, Tensor):
-            x = Tensor(np.array(x))
-        return x
+        if isinstance(x, Tensor):
+            return x
+        else:
+            if isinstance(x, (int,float)):
+                x = Tensor(np.array(x))
+                return x
+            else:
+                x = Tensor(x)
+                return x
     
     def numpy(self)-> np.ndarray:
         """Return the underlying numpy array"""
@@ -532,8 +540,8 @@ class Tensor:
                 axes[-2], axes[-1] = axes[-1], axes[-2]
                 transposed_data = np.transpose(self.data, axes)
         else:
-            if dim0 < 0 or dim1 < 0:
-                raise ValueError('Dimensions must be non-negative')
+            # if dim0 < 0 or dim1 < 0:
+            #     raise ValueError('Dimensions must be non-negative')
             if dim0 >= len(self.shape) or dim1 >= len(self.shape):
                 raise ValueError('Dimensions must be within the tensor shape')
             if dim0 == dim1:
@@ -661,6 +669,41 @@ class Tensor:
         data = np.tril(input.data, k=diagonal).astype(dtype)
         return cls(data=data, requires_grad=requires_grad, dtype=dtype, device=device)
     
+    @classmethod
+    def masked_fill(cls, input: Tensor, filler=-np.inf, requires_grad=False,dtype=np.float32, device=None):
+        if input.data.ndim <= 2:
+            raise ValueError(
+                f'Input Tensor must 3-D, you provided a {input.data.ndim}-D Tensor'
+            )
+        output_data = input.data.copy()
+        mask = np.zeros_like(output_data)
+        seq_len = output_data.shape[-1]
+        rows, cols = np.triu_indices(seq_len, k=1)
+        output_data[..., rows, cols] = filler
+        mask[..., rows, cols] = True
+        
+        result = cls(
+            output_data,
+            requires_grad=input.requires_grad,
+            _parents=(input,),
+            dtype=input.dtype,
+            device=input.device,
+        )
+        
+        def _backward():
+            if result.grad == None:
+                return
+            grad = input.grad.copy()
+            grad[mask] = 0
+    
+            input._add_grad(grad)
+        return result
+    
+    @classmethod
+    def stack(cls, input_tensors: List[Tensor], axis=0, requires_grad=False):
+        a,b = input_tensors
+        stack = np.stack(a.data, b.data, axis=axis, dtype=np.float32)
+        return Tensor(stack, requires_grad=requires_grad)
     
 if __name__ == "__main__":
     #* Example usage
