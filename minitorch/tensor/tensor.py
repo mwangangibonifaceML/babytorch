@@ -143,12 +143,10 @@ class Tensor:
             grad_input = np.zeros_like(self.data)
 
             # Scatter gradient back to the indexed positions
-            grad_input[key] = grad_input[key] + result.grad
+            grad_input[key] += result.grad
 
             self._add_grad(grad_input)
-
         result._backward = _backward
-
         return result
     
     def __len__(self)->int:
@@ -189,10 +187,10 @@ class Tensor:
         
         def _backward():
             if self.requires_grad:
-                self._add_grad(other.data * result.grad)
+                self._add_grad(result.grad * other.data)
                 
             if other.requires_grad:
-                other._add_grad(self.data * result.grad)
+                other._add_grad(result.grad * self.data)
         
         result._backward = _backward
         return result
@@ -339,63 +337,21 @@ class Tensor:
                 return
 
             grad_output = result.grad
-            #* Case 1: Matrix @ Vector
-            if self.data.ndim == 2 and other.data.ndim == 1:
-                # (m,k) @ (k,) -> (m,)
-                if self.requires_grad:
-                    grad_self = np.outer(grad_output, other.data)
-                    self._add_grad(grad_self)
-                if other.requires_grad:
-                    other._add_grad(grad_other)
-                    grad_other = self.data.T @ grad_output
-
-            #* Case 2: Vector @ Matrix
-            elif self.data.ndim == 1 and other.data.ndim == 2:
-                # (k,) @ (k,n) -> (n,)
-                if self.requires_grad:
-                    grad_self = grad_output @ other.data.T
-                    self._add_grad(grad_self)
-                if other.requires_grad:
-                    other._add_grad(grad_other)
-                    grad_other = np.outer(self.data, grad_output)
-
-            #* Case 3: Matrix @ Matrix
-            elif self.data.ndim > 1 and other.data.ndim > 1:
-                # (m,k) @ (k,n) -> (m,n)
-                if self.requires_grad:
-                    grad_self = grad_output @ other.data.T
-                    self._add_grad(grad_self)
-                if other.requires_grad:
-                    grad_other = self.data.T @ grad_output
-                    other._add_grad(grad_other)
-                
-            #* Case 4: Scalar @ Matrix
-            elif self.data.ndim == 0 and other.data.ndim == 2:
-                if self.requires_grad:
-                    grad_self = grad_output @ other.data.T
-                    self._add_grad(grad_self)
-                if other.requires_grad:
-                    grad_other = np.outer(self.data, grad_output)
-                    other._add_grad(grad_other)
-                
-            #* Case 5: Scalar @ vector
-            elif self.data.ndim == 0 and other.data.ndim == 1:
-                if self.requires_grad:
-                    grad_self = grad_output * other.data
-                    self._add_grad(grad_self)
-                if other.requires_grad:
-                    grad_other = grad_output * self.data
-                    other._add_grad(grad_other)
-                    
-            #* Case 6: Vector @ vector
-            elif self.data.ndim == 1 and other.data.ndim == 1:
-                if self.requires_grad:
-                    grad_self = grad_output * other.data
-                    self._add_grad(grad_self)
-                if other.requires_grad:
-                    grad_other = grad_output * self.data
-                    other._add_grad(grad_other)
-                                    
+            #* gradient of the first input
+            if self.requires_grad:
+                if other.data.ndim >=2:
+                    other_transpose = other.data.swapaxes(-2,-1)
+                    self._add_grad(grad_output @ other_transpose)
+                else:
+                    self._add_grad(np.outer(grad_output,other.data))
+            
+            if other.requires_grad:
+                if other.data.ndim >=2:
+                    self_transpose = self.data.swapaxes(-2,-1)
+                    other._add_grad(self_transpose @ grad_output)
+                else:
+                    self._add_grad(np.outer(self.data @ grad_output))
+                            
         result._backward = _backward
         return result
     
@@ -529,8 +485,8 @@ class Tensor:
         return result
     
     def transpose(self, dim0=None, dim1=None):
-        """Transpose tensor dimensions."""
-        ### BEGIN SOLUTION
+        "A linear transformation that rearranges elements"
+        
         axis = None
         if dim0 is None and dim1 is None:
             if len(self.shape) < 2: #* 1D or scalar 
@@ -538,6 +494,7 @@ class Tensor:
             else:                   #* default case
                 axes = list(range(len(self.shape)))
                 axes[-2], axes[-1] = axes[-1], axes[-2]
+                axis= axes
                 transposed_data = np.transpose(self.data, axes)
         else:
             # if dim0 < 0 or dim1 < 0:
@@ -559,6 +516,11 @@ class Tensor:
                         device=self.device)
         
         def _backward():
+            """
+            
+            **Key insight:** The gradient of transpose is just transpose the 
+            gradient.
+            """
             if not self.requires_grad:
                 return
                 
