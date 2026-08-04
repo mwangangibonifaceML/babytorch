@@ -106,7 +106,9 @@ class ReLU:
         Returns:
             Tensor: Output tensor after applying ReLU activation.
         """
-        result = Tensor(np.maximum(0, X.data), requires_grad=X.requires_grad, _parents=(X,))
+        result = Tensor(np.maximum(0, X.data),
+                        requires_grad=X.requires_grad,
+                        _parents=(X,))
         
         if X.requires_grad:
             def _backward():
@@ -185,8 +187,8 @@ class GELU:
         
         if X.requires_grad:
             def _backward():
-                sig_grad = sigmoid_part * (1 - sigmoid_part)
-                grad = sigmoid_part + X.data * sig_grad * 1.702
+                sig = sigmoid_part * (1 - sigmoid_part)
+                grad = sig + X.data * 1.702 * sig * (1.0 - sig)
                 X._add_grad(result.grad * grad)
             result._backward = _backward
         return result
@@ -222,8 +224,8 @@ class Softmax:
         
         if X.requires_grad:
             def _backward():
-                softmax_grad = softmax * softmax
-                gradient = result.grad * softmax_grad
+                sum_term = np.sum(result.grad * result.data, axis=dim, keepdims=True)
+                gradient = result.grad * (result.grad - sum_term)
                 X._add_grad(gradient)
             result._backward = _backward
         
