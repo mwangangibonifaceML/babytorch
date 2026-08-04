@@ -189,13 +189,15 @@ class Linear(Module):
         scale = (XAVIER_SCALE_FACTOR / in_features) ** 0.5 if xaiver_init else \
             (HE_SCALE_FACTOR / in_features) ** 0.5
             
-        self.weight = Tensor(
+        self.weight = Parameter(
             np.random.randn(in_features, out_features) * scale,
-            requires_grad=True
+            # requires_grad=True
             )
         
         if bias:
-            self.bias = Tensor(np.zeros(out_features), requires_grad=True)
+            self.bias = Parameter(np.zeros(out_features),
+                                # requires_grad=True
+                                )
             
         else:
             self.bias = None
