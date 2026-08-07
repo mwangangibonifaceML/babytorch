@@ -206,10 +206,10 @@ class MultiHeadAttention:
 
         """
         params = []
-        params.extend([self.q_proj.parameters()] )
-        params.extend([self.k_proj.parameters()] )
-        params.extend([self.v_proj.parameters()] )
-        params.extend([self.out_proj.parameters()] )
+        params.extend(self.q_proj.parameters())
+        params.extend(self.k_proj.parameters())
+        params.extend(self.v_proj.parameters())
+        params.extend(self.out_proj.parameters())
         
         return  params
     
