@@ -34,6 +34,18 @@ def log_softmax(tensor: Tensor, dim: Optional[int] = None) -> Tensor:
     #* return log-softmax = tensor - max_val - log_softmax_data
     return Tensor(x - max_val - log_softmax_data)
 
+
+def stable_softmax(logits_data):
+    """compute softmax probabilities with numerical stability
+    
+    Subtracts the max value per row before exponentiating to prevent overflow
+    
+    """
+    max_logits = np.max(logits_data, axis=1, keepdims=True)
+    exp_logits = np.exp(logits_data - max_logits)
+    return exp_logits / np.sum(exp_logits, axis=1, keepdims=True)
+
+
 class Loss:
     def __init__(self) -> None:
         pass
@@ -85,30 +97,34 @@ class SoftMaxCrossEntropy(Loss):
         pass
     
     def __call__(self, logits: Tensor, targets: Tensor) -> Tensor:
-        np_loss = self.forward(logits, targets).data
-        return Tensor(np_loss, requires_grad=True)
+        return self.forward(logits, targets)
     
     def forward(self, logits: Tensor, targets: Tensor) -> np.any:
         #* calculate log probs
-        log_probs = log_softmax(logits, dim=-1)
+        logits_reshape = logits.reshape(-1, logits.shape[-1])
+        log_probs = log_softmax(logits_reshape, dim=-1)
         
         #* get batch_size and make targets ints
-        batch_size = logits.shape[0]
-        target_indices = targets.data.astype(int)
+        batch_size, num_classes = log_probs.shape[0], log_probs.shape[1]
+        target_indices = targets.reshape(-1).data.astype(int)
         
         #* get selected log probs
         selected_log_probs = log_probs.data[np.arange(batch_size), target_indices]
         
         #* calculate loss
-        neg_log_probs = -np.mean(selected_log_probs)
+        neg_log_probs = -np.mean(selected_log_probs) #* pytorch's NLLoss
         loss = Tensor(neg_log_probs,
                     requires_grad=logits.requires_grad,
                     _parents=(logits,))
         
         def _backward():
             if logits.requires_grad:
-                grad_logits = (log_probs - selected_log_probs) / batch_size
-                logits._add_grad(grad_logits * loss.grad)
+                stable_probs = stable_softmax(logits_reshape.data)
+                one_hot_enocode = np.zeros((batch_size, num_classes), dtype=np.float32)
+                one_hot_enocode[np.arange(batch_size), target_indices] = 1.0
+                grad_logits = (stable_probs - one_hot_enocode) / batch_size
+                logits_grad = (grad_logits * loss.grad).reshape(logits.shape)
+                logits._add_grad(logits_grad)
             
         loss._backward = _backward
         return loss
