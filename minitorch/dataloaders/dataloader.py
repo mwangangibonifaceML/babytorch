@@ -74,21 +74,22 @@ class DataLoader:
     """
     Data Loader class supporting shuffling and batching of the data
     """
-    def __init__(self, dataset: TensorDataset, batch_size: int, shuffle:bool=True):
+    def __init__(self, dataset: Tensor, context_length: int, shuffle:bool=True):
         assert len(dataset) > 0, "Dataset cannot be empty"
-        assert batch_size > 0, "Batch size must be greater than 0"
+        assert context_length > 0, "Batch size must be greater than 0"
         
         self.dataset = dataset
-        self.batch_size = batch_size
+        self.context_length = context_length
         self.shuffle = shuffle
+
         
     def __len__(self)-> int:
         """
-        Get the number of batches in the dataset given the batcch size and the length
+        Get the number of batches in the dataset given the context length and the length
         of the dataset
         """
         
-        num_batches = (len(self.dataset) + self.batch_size -1) // self.batch_size
+        num_batches = (len(self.dataset) + self.context_length -1) // self.context_length
         return num_batches
     
     def __iter__(self):
@@ -99,8 +100,8 @@ class DataLoader:
         if self.shuffle:
             random.shuffle(indeces)
         
-        for i in range(0, len(self.dataset), self.batch_size):
-            batch_indeces = indeces[i:i+self.batch_size]
+        for i in range(0, len(self.dataset), self.context_length):
+            batch_indeces = indeces[i:i+self.context_length]
             batch = [self.dataset[index] for index in batch_indeces]
             yield self._collate_batch(batch)
             
@@ -117,6 +118,19 @@ class DataLoader:
             batched_tensors.append(batch_tensors)
             
         return tuple(batched_tensors)
+    
+    def get_batch(self, batch_size: int) -> Tuple[Tensor, Tensor]:
+        """
+        Get a specific batch .
+        """
+        if batch_size >= len(self) or batch_size < 0:
+            raise IndexError(f"Batch index {batch_size} out of range for DataLoader with {len(self)} batches")
+        
+        ix = Tensor.randint(low=0, high=len(self) - self.context_length,
+                            shape=(batch_size,)).data.tolist()
+        x = Tensor.stack([self.dataset[i:i+self.context_length]for i in ix], axis=0)
+        y = Tensor.stack([self.dataset[i+1:i+1+self.context_length]for i in ix], axis=0)
+        return x,y
     
 
     
