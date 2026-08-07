@@ -418,6 +418,9 @@ class LayerNormalization(Module):
     def __call__(self, input: Tensor, ) -> Tensor:
         return self.forward(input)
     
+    def parameters(self) -> List[Parameter]:
+        return [self.gamma, self.beta]
+    
 class BatchNormalization(Module):
     """
     Normalizes across the first dimension. 
@@ -504,6 +507,9 @@ class BatchNormalization(Module):
     def __call__(self, input: Tensor, ) -> Tensor:
             return self.forward(input)
     
+    def parameters(self) -> List[Parameter]:
+            return [self.gamma, self.beta]
+        
 class Flatten:
     def __init__(self)-> None:
         pass 
