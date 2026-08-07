@@ -43,7 +43,7 @@ class Tensor:
     This class focuses on: data, shape, and basic operations.
     """
     def __init__(self, 
-                data: NDArray,
+                data: NDArray | List[int, float],
                 requires_grad=False,
                 dtype=np.float32,
                 device: str =None,
@@ -663,9 +663,14 @@ class Tensor:
     
     @classmethod
     def stack(cls, input_tensors: List[Tensor], axis=0, requires_grad=False):
-        a,b = input_tensors
-        stack = np.stack(a.data, b.data, axis=axis, dtype=np.float32)
+        stack = np.stack([tensor.data for tensor in input_tensors], axis=axis, dtype=np.float32)
         return Tensor(stack, requires_grad=requires_grad)
+    
+    @classmethod
+    def randint(cls, low: int, high: int, shape: tuple[int, ...], requires_grad=False, dtype=int, device=None) -> Tensor:
+        """Create a Tensor filled with random integers from a uniform distribution."""
+        data = np.random.randint(low, high, size=shape).astype(dtype)
+        return cls(data=data, requires_grad=requires_grad, dtype=dtype, device=device)
     
 if __name__ == "__main__":
     #* Example usage
