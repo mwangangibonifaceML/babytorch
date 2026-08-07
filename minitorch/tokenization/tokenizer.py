@@ -80,6 +80,7 @@ class CharTokenizer(Tokenizer):
         
         #* vocabulary builder flag
         self.is_vocab_built = False
+        self.vocabulary = self.char_to_id.keys()
         
     def _add_token(self, token: str) -> None:
         """
