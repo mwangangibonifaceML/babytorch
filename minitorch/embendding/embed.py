@@ -18,8 +18,8 @@ class Embedding:
             vocab_size (int): The maximum number of allowed vocabulary 
             embed_dim (int): The number of embedding dimesions
         """
-        self.vocab_size = vocab_size
         self.embed_dim = embed_dim
+        self.vocab_size = vocab_size
         
         #* Xavier initialization for better gradient flow
         limit = math.sqrt(6.0 / (self.vocab_size + self.embed_dim))
@@ -92,7 +92,7 @@ class Embedding:
     
     
 class PositionalEncoding:
-    def __init__(self, max_seq_len: int, embed_dim: int, encoding_type: str | None = 'learned') -> None:
+    def __init__(self, max_seq_len: int, embed_dim: int, encoding_type: str | None = 'sinusoidal') -> None:
         self.max_seq_len   : int = max_seq_len
         self.embed_dim     : int = embed_dim
         self.encoding_type : str | None = encoding_type
@@ -116,7 +116,7 @@ class PositionalEncoding:
         """
         if len(X.shape) == 2:
             X = X.reshape(1, X.shape[0], X.shape[1])
-
+            _, seq_len, embed_dim = X.shape
         #* verify if the seq_len and embed_dim of the input are within
         #* max_seq_len and embed_dim used in initializing the layer
         _, seq_len, embed_dim = X.shape
@@ -189,7 +189,7 @@ class PositionalEncoding:
         "Get the parameters of the layer"
         if self.encoding_type == 'learned':
             return [self.pos_embedding]
-        return 
+        return []
     
     def __repr__(self) -> str:
         return f'PositionalEncoding(max_seq_len={self.max_seq_len}, embed_dim={self.embed_dim})'
@@ -220,7 +220,6 @@ class EmbeddingLayer:
             - 'sinusoidal' -> create_sinusoidal_embeddings(max_seq_len, embed_dim)
             - None -> no positional encoding
         """
-        
         self.vocab_size = vocab_size
         self.embed_dim = embed_dim
         self.max_seq_len = max_seq_len
