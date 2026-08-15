@@ -69,11 +69,10 @@ class Optimizer:
             f"                  param.data -= self.lr * param.grad.data"
         )
         
-    def _extract_grad_data(self)-> List[NDArray]:
+    def _extract_grad_data(self, gradient: Tensor | NDArray)-> NDArray:
         """Extract the gradient of the parameters passed to the optimizer"""
-        gradient = []
-        for param in self.params:
-            gradient.append(param.grad)
+        if isinstance(gradient, Tensor):
+            return gradient.data
         return gradient
     
     def zero_grad(self):
@@ -127,7 +126,7 @@ class SGD(Optimizer):
             state (Optional[List]): List of momentum buffers or None
         """
         
-        if state is None or self.has_momentum():
+        if state is None or not self.has_momentum():
             return
         
         if len(state) != len(self.momentum_buffers):
@@ -151,7 +150,7 @@ class SGD(Optimizer):
                 continue
             
             #* extract the gradient for the current parameter (grad is already ndarray)
-            grad_data = np.array(param.grad)
+            grad_data = self._extract_grad_data(param.grad)
             
             #* apply weight decay for the current parameter
             if self.weight_decay != 0:
@@ -167,16 +166,25 @@ class SGD(Optimizer):
                 grad_data = self.momentum_buffers[i]
                 
             #* update parameter: params = param - lr * grad_data
-            param.data = param.data - self.lr * grad_data
+            param.data -= self.lr * grad_data
             
         #* increament the counter
         self.step_count += 1
         
 
 class Adam(Optimizer):
+    """
+    Adaptive learning rate optimizer
+    
+    Adam optimizer fixes SGD's bug, assumption that all paramters need the same learning
+    rate for updates. Adam computes individual adaptive learning rates for different
+    parameters from estimates of first and second moments of the gradients. This makes
+    it effective for problems with sparse gradients or noisy data
+    
+    """
     def __init__(self,
                 params: List[Tensor],
-                betas: Tuple[int, int] = (DEFAULT_BETA1, DEFAULT_BETA2),
+                betas: Tuple[float, float] = (DEFAULT_BETA1, DEFAULT_BETA2),
                 lr: float= DEFAULT_LEARNING_RATE_ADAM,
                 weight_decay: float = 0.0,
                 eps: float = DEFAULT_EPS) -> None:
@@ -195,7 +203,7 @@ class Adam(Optimizer):
         """
         Update first and second moment estimates with bias correction.
         
-        Computes the exponential moving averages of the gradient (first moment)
+        Computes the exponential moving averages(EMA) of the gradient (first moment)
         and the squared gradient (second moment), then applies bias correction
         to counteract the zero-initialization bias in early training steps.
         """
@@ -219,7 +227,16 @@ class Adam(Optimizer):
         return m_hat, v_hat
     
     def step(self):
-        """Update the parameters using adaptive learning rate"""
+        """
+        Update the parameters using adaptive learning rate
+        
+        Approach:
+                Does three things for each parameter
+                1) extracts gradient from the parameter.
+                2) updates moments for adaptice scaling.
+                3) updates the parameters.
+        
+        """
         #* increment the counter
         self.step_count += 1
         
@@ -229,26 +246,42 @@ class Adam(Optimizer):
                 continue
             
             #* extract the gradient for the current parameter
-            grad_data = np.array(param.grad.data)
+            # grad_data = np.array(param.grad.data)
+            grad_data = self._extract_grad_data(param.grad)
             
-            #* perform weight decay if needed
+            #* perform weight decay if needed before adaptive scaling
             if self.weight_decay != 0.0:
                 grad_data += self.weight_decay * param.data
                 
             #* update moments
             m_hat, v_hat = self._update_moments(i, grad_data)
             
+            print(m_hat, v_hat)
             #* update the parameter
+            #* weight decay get 'adapted' by the learning rate scaling
             param.data -= self.lr * m_hat / (np.sqrt(v_hat) + self.eps)
             
             
 class AdamW(Optimizer):
+    """
+    Adam optimizer with a decoupled weight decay
+    
+    Fixes a bug in Adam's weight decay implementation by decoupling weight decay
+    from the gradient based update, leading to better regularization and is the 
+    preffered version in Transformers and most applications.
+    
+    Key Insight:
+        AdamW treats optimization and regularization as separate, independent
+        processes, leading to better training dynamics and generalization.
+    
+    """
     def __init__(self,
                 params: List[Tensor],
-                betas: Tuple[int, int] = (DEFAULT_BETA1, DEFAULT_BETA2),
+                betas: Tuple[float, float] = (DEFAULT_BETA1, DEFAULT_BETA2),
                 lr: float= DEFAULT_LEARNING_RATE_ADAM,
                 weight_decay: float = 0.0,
                 eps: float = DEFAULT_EPS) -> None:
+        """Initialize the AdamW optimizer"""
         super().__init__(params)
         self.lr = lr
         self.beta1, self.beat2 = betas[0], betas[1]
@@ -298,11 +331,144 @@ class AdamW(Optimizer):
                 continue
             
             #* extract the gradient for the current parameter
-            grad_data = np.array(param.grad.data)
+            grad_data = self._extract_grad_data(param.grad)
                 
             #* update moments
+            #* using pure gradients
             m_hat, v_hat = self._update_moments(i, grad_data)
             
             #* update the parameter
+            #* weight decay applied after learning rate scaling
             param.data -= self.lr * m_hat / (np.sqrt(v_hat) + self.eps)
-            param.data *= (1- self.weight_decay)
+            param.data *= (1- self.lr * self.weight_decay)
+
+
+
+def test_unit_adam_update_moments():
+    """🧪 Test Adam _update_moments computes correct EMA and bias correction."""
+    print("🧪 Unit Test: Adam Moment Updates...")
+    
+    param = Tensor(np.array([1.0,2.0]), requires_grad=True)
+    optimizer = Adam([param], lr=0.01, betas=[0.9,0.999], eps=1e-8)
+    grad = np.array([2.0,1.0])
+    
+    #* auto calculation
+    optimizer.step_count = 1
+    m_hat, v_hat = optimizer._update_moments(0, grad)
+    
+    #* manual calculation
+    m = 0.9 * 0 + (1-0.9) * grad
+    v = 0.999 * 0 + (1-0.999) * grad ** 2
+    m_bias_corr = 1 - 0.9 ** 1
+    v_bias_corr = 1 - 0.999 ** 1
+    m_hat_man = m / m_bias_corr
+    v_hat_man = v / v_bias_corr
+    
+    assert np.allclose(m_hat, m_hat_man), f'first moment should equal grad at step 1, got {m_hat}'
+    assert np.allclose(v_hat, v_hat_man), f'second moment should equal the square of the grad at step 1, got {v_hat}'
+    
+    #* step 2
+    optimizer.step_count = 2
+    m_hat2, v_hat2 = optimizer._update_moments(0, grad)
+    
+    assert np.allclose(m_hat, m_hat_man), f'first moment should equal grad at step 1, got {m_hat}'
+    assert np.allclose(v_hat, v_hat_man), f'second moment should equal the square of the grad at step 1, got {v_hat}'
+        
+    assert optimizer.m_buffers[0] is not None
+    assert optimizer.v_buffers[0] is not None
+    print("✅ Adam moment updates work correctly!")
+    
+    
+def test_unit_adam_optimizer():
+    """🧪 Test Adam optimizer implementation."""
+    print("🧪 Unit Test: Adam Optimizer...")
+    
+    param = Tensor([5.2,6.5], requires_grad=True)
+    optimizer = Adam([param], lr=0.001, betas=[0.9,0.999], eps=1e-8)
+    param.grad = np.array([1.0,2.0])
+    
+    #* auto calculation
+    optimizer.step()
+    
+    #* manual caculation
+    #? moments calculation
+    m = 0.9 * 0 + (1-0.9) * param.grad
+    v = 0.999 * 0 + (1-0.999) * param.grad ** 2
+    m_bias_corr = 1 - 0.9 ** 1
+    v_bias_corr = 1 - 0.999 ** 1
+    m_hat_man = m / m_bias_corr
+    v_hat_man = v / v_bias_corr
+    
+    #* param update
+    original_data = param.data.copy()
+    expected = original_data - 0.001 * m_hat_man / (np.sqrt(v_hat_man) + 1e-8)
+    
+    assert np.allclose(param.data, expected, rtol=1e-3), f'Expected auto parameter update to be close to manual update, expected {expected}, got {param}'
+    
+    print('✅ Adam optimizer works correclty')
+    
+def test_unit_adamw_optimizer():
+    """🧪 Test AdamW optimizer implementation."""
+    print("🧪 Unit Test: AdamW Optimizer...")
+
+    # Test AdamW vs Adam difference in weight decay
+    # Create identical parameters for comparison
+    param_adam = Tensor([1.0, 2.0], requires_grad=True)
+    param_adamw = Tensor([1.0, 2.0], requires_grad=True)
+
+    # Create optimizers with same settings
+    adam = Adam([param_adam], lr=0.01, weight_decay=0.01)
+    adamw = AdamW([param_adamw], lr=0.01, weight_decay=0.01)
+
+    # Set gradients AFTER creating optimizers (optimizer.__init__ resets grad to None)
+    param_adam.grad = np.array([0.1, 0.2])
+    param_adamw.grad = np.array([0.1, 0.2])
+
+    # Take one step
+    adam.step()
+    adamw.step()
+
+    # Results should be different due to weight decay implementation
+    assert not np.allclose(param_adam.data, param_adamw.data, rtol=1e-6)
+
+    # Test AdamW basic functionality
+    param = Tensor([1.0, 2.0], requires_grad=True)
+    optimizer = AdamW([param], lr=0.01, weight_decay=0.01)
+    
+    # Set gradient AFTER creating optimizer
+    param.grad = np.array([0.1, 0.2])
+    original_data = param.data.copy()
+
+    optimizer.step()
+
+    # Parameter should have changed
+    assert not np.array_equal(param.data, original_data)
+    assert optimizer.step_count == 1
+
+    # Test that moment buffers are created
+    assert optimizer.m_buffers[0] is not None
+    assert optimizer.v_buffers[0] is not None
+
+    # Test zero weight decay behaves like Adam
+    param1 = Tensor([1.0, 2.0], requires_grad=True)
+    param2 = Tensor([1.0, 2.0], requires_grad=True)
+
+    adam_no_wd = Adam([param1], lr=0.01, weight_decay=0.0)
+    adamw_no_wd = AdamW([param2], lr=0.01, weight_decay=0.0)
+
+    # Set gradients AFTER creating optimizers
+    param1.grad = Tensor([0.1, 0.2])
+    param2.grad = Tensor([0.1, 0.2])
+
+    adam_no_wd.step()
+    adamw_no_wd.step()
+
+    # Should be very similar (within numerical precision)
+    assert np.allclose(param1.data, param2.data, rtol=1e-10)
+
+    print("✅ AdamW optimizer works correctly!")
+
+if __name__ == '__main__':
+    test_unit_adam_update_moments()
+    test_unit_adam_optimizer()
+    test_unit_adamw_optimizer()
