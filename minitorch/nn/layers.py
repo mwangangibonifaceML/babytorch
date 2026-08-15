@@ -81,11 +81,13 @@ class Module:
         self.training =True
         
     def eval(self):
+        """Sets the layers to evaluation mode."""
         self.training = False
         for module in _get_modules(self):
             module.training = False
         
     def train(self):
+        """Sets the layers to training mode."""
         self.training = True
         for module in _get_modules(self):
             module.training = True
@@ -182,16 +184,17 @@ class Linear(Module):
     def __init__(self, in_features: int, out_features: int, bias=False, xaiver_init: bool=True) -> None:
         super().__init__()
         self.in_features = in_features
+        self.out_features = out_features
         
         #* Xavier initialization for stable gradients
         #* He initialization for ReLU/GELU activations
         #* XAVIER_SCALE_FACTOR = 1.0 whilwe HE_SCALE_FACTOR = 2.0
         scale = (XAVIER_SCALE_FACTOR / in_features) ** 0.5 if xaiver_init else \
             (HE_SCALE_FACTOR / in_features) ** 0.5
+        limit = np.sqrt(6.0 / (in_features + out_features))
             
         self.weight = Parameter(
-            np.random.randn(in_features, out_features) * scale,
-            # requires_grad=True
+            np.random.uniform(-limit, limit, size=(in_features, out_features)) * scale
             )
         
         if bias:
@@ -215,20 +218,32 @@ class Linear(Module):
             return input @ self.weight + self.bias
         return input @ self.weight
     
-    def parameters(self) -> list[Tensor]:
+    def parameters(self) -> list[Parameter]:
         """Returns the parameters of the linear layer.
         
         Returns:
             list[Tensor]: A list containing the weight and bias tensors.
         """
-        if self.bias:
-            return [self.weight, self.bias]
-        return [self.weight]
+        params = [self.weight]
+        if self.bias is not None:
+            params.append(self.bias)
+        return params
+    
+    def __call__(self, input: Tensor) -> Tensor:
+        """Allows the linear layer to be called like a function.
+        
+        Args:
+            input (Tensor): The input tensor of shape (batch_size, in_features).
+        
+        Returns:
+            Tensor: The output tensor of shape (batch_size, out_features).
+        """
+        return self.forward(input)
     
     def __repr__(self) -> str:
         """String representation of the linear layer."""
-        bias_str = ", bias=True" if self.bias is not None else ""
-        return (f"Linear(in_features={self.in_features}, "
+        bias_str = ", bias=True" if self.bias is not None else None
+        return (f"Linear(in_features={self.in_features}, out_features= {self.out_features}, "
                 f"bias={bias_str})")
         
 class Layer(Module):
@@ -245,10 +260,12 @@ class Layer(Module):
     def __call__(self, input: Tensor) -> Tensor:
         out = [neuron(input) for neuron in self.neurons]
         return out
-
     
-    def parameters(self) -> List[Tensor]:
-        return [neuron.parameters() for neuron in self.neurons]
+    def parameters(self) -> list[Parameter]:
+        params = []
+        for neuron in self.neurons:
+            params.extend(neuron.parameters())
+        return params
     
     def __repr__(self)-> str:
         return f'Layer(number of neuron: {len(self.neurons)})'
@@ -258,11 +275,11 @@ class Dropout(Module):
     Args:
         p (float): Probability of dropping a unit. Must be in the range [0.0, 1.0).
     """
-    def __init__(self, p: float, training: bool=False) -> None:
+    def __init__(self, p: float) -> None:
+        super().__init__()
         if not (DROPOUT_MIN_PROB <= p <= DROPOUT_MAX_PROB):
             raise ValueError(f"Dropout probability must be in the range [{DROPOUT_MIN_PROB}, {DROPOUT_MAX_PROB}), got {p}.")
         self.p = p
-        self.training = training
         
     def forward(self, input: Tensor) -> Tensor:
         """Forward pass through the dropout layer.
@@ -301,13 +318,10 @@ class Dropout(Module):
     def __call__(self, input: Tensor) -> Tensor:
         return self.forward(input)
     
-    def parameters(self) -> list[Tensor]:
-        return super().parameters()
-    
     def __repr__(self) -> str:
         return f"Dropout(p={self.p})"
     
-class Sequential:
+class Sequential(Module):
     """" A container that chains layers together sequentially. It chains these layers
     together, calling forward() on each layer in sequence. This is similar to 
     torch.nn.Sequential but much simpler.
@@ -331,16 +345,16 @@ class Sequential:
             input = layer(input)
         return input
         
-    def __call__(self, input: Tensor) -> Tensor:
-        """Allows the Sequential container to be called like a function."""
-        return self.forward(input)
-    
-    def parameters(self) -> list[Parameter]:
+    def parameters(self) -> List[Parameter]:
         """Returns the parameters of all layers in the Sequential container."""
         params = []
         for layer in self.layers:
             params.extend(layer.parameters())
         return params
+    
+    def __call__(self, input: Tensor) -> Tensor:
+        """Allows the Sequential container to be called like a function."""
+        return self.forward(input)
         
     def __repr__(self) -> str:
         layers_repr = ",\n  ".join(repr(layer) for layer in self.layers)
@@ -353,7 +367,8 @@ class Residual(Module):
         self.fn = fn
         
     def forward(self, X: Tensor) -> Tensor:
-        return  X + self.fn(X) 
+        fn_result = self.fn(X) 
+        return  X + fn_result
     
     def __repr__(self) -> str:
         return f"Residual({self.fn})"
@@ -418,7 +433,11 @@ class LayerNormalization(Module):
     def __call__(self, input: Tensor, ) -> Tensor:
         return self.forward(input)
     
-    def parameters(self) -> List[Parameter]:
+    def __repr__(self) -> str:
+        return f'LayerNormalization(dim={self.dim})'
+    
+    def parameters(self) -> list[Parameter]:
+        """Returns the learnable parameters of the layer normalization layer."""
         return [self.gamma, self.beta]
     
 class BatchNormalization(Module):
@@ -505,10 +524,11 @@ class BatchNormalization(Module):
         return out
     
     def __call__(self, input: Tensor, ) -> Tensor:
-            return self.forward(input)
+        return self.forward(input)
     
     def parameters(self) -> List[Parameter]:
-            return [self.gamma, self.beta]
+        """Returns the learnable parameters of the batch normalization layer."""
+        return [self.gamma, self.beta]
         
 class Flatten:
     def __init__(self)-> None:
