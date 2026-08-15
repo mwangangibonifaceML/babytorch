@@ -6,7 +6,7 @@ import logging
 import numpy as np
 from typing import Tuple, Optional
 from minitorch.tensor.tensor import Tensor
-from minitorch.nn.layers import Linear
+from minitorch.nn.layers import Linear, Dropout, Module
 from minitorch.activations.activations import Softmax
 
 #* Configure logging
@@ -88,13 +88,15 @@ def scaled_dot_product_attention(
     scaled_scores = _scale_scores(scores, query.shape[-1])  # (batch_size, seq_length, seq_length)
     masked_scores = _apply_mask(scaled_scores)  # (batch_size, seq_length, seq_length)
     
+    assert np.all(np.isfinite(masked_scores.data) | np.isneginf(masked_scores.data))
+    
     #* convert to probabilities
     attention_weights = softmax_fn(masked_scores)  # (batch_size, seq_length, seq_length)
     output = attention_weights @ value  # (batch_size, seq_length, head_dim)
     
     return output, attention_weights
 
-class MultiHeadAttention:
+class MultiHeadAttention(Module):
     """
     MultiHead Attention mechanism, which run multiple heads
     in parallel, each head learning a different relationship
@@ -110,6 +112,7 @@ class MultiHeadAttention:
             embed_dim (int): Embedding dimension of the input and output tensors
             n_heads (int): Number of parallel heads to run in the attention mechanism
         """
+        super().__init__()
         assert embed_dim % n_heads == 0, "Embedding dimension must be divisible by number of heads"
         self.embed_dim = embed_dim
         self.n_heads = n_heads
@@ -178,21 +181,21 @@ class MultiHeadAttention:
         V = self._split_heads(V) #* (V.shape: (batch_size, n_heads, seq_length, head_dim))
         
         #* apply the scaled-dot-product attention
-        attended, atten_wei = scaled_dot_product_attention(Q,K,V)
+        attended, _ = scaled_dot_product_attention(Q,K,V)
 
         #* merge heads back together
         concatenated_output = self._merge_heads(attended)
         
         #* pass through the output projection
         output = self.out_proj(concatenated_output)
-        return output, atten_wei
+        return output
     
     def __call__(self, X: Tensor, mask: Optional[Tensor] = None) -> Tensor:
         return self.forward(X, mask)
     
     def parameters(self) -> list[Tensor]:
         """
-        Return all trainable parameters by collecting parameters from all linear layers,
+        Return all trainable parameters in the MultiHeadAttention.
         
         Expects 4 parameters when projections are instatiated using bias=False (each projection
         with weight only, 4 * 1 = 4), else expects 8 parameters, (each projection with weight and bias, 4 * 2 = 8)
@@ -210,9 +213,15 @@ class MultiHeadAttention:
         params.extend(self.k_proj.parameters())
         params.extend(self.v_proj.parameters())
         params.extend(self.out_proj.parameters())
-        
-        return  params
+        return params
     
+    def __repr__(self) -> str:
+        return f'''
+        Qeury = {repr(self.q_proj)},
+        Key = {repr(self.k_proj)},
+        Value = {repr(self.v_proj)}
+        '''
+        
     
 def test_unit_scaled_dot_product_attention():
     """🧪 Test scaled dot-product attention implementation."""
