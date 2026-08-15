@@ -92,17 +92,14 @@ class Embedding:
     
     
 class PositionalEncoding:
-    def __init__(self, max_seq_len: int, embed_dim: int, encoding_type: str | None = 'sinusoidal') -> None:
+    def __init__(self, max_seq_len: int, embed_dim: int) -> None:
         self.max_seq_len   : int = max_seq_len
         self.embed_dim     : int = embed_dim
-        self.encoding_type : str | None = encoding_type
     
-        if self.encoding_type == 'learned':
-            #* initialize pos embedding weight
-            limit = math.sqrt(2.0 / self.embed_dim)
-            self.pos_embedding = Tensor.rand(
-                -limit, limit, (self.max_seq_len, self.embed_dim), requires_grad= True
-            )
+        limit = math.sqrt(2.0 / self.embed_dim)
+        self.pos_embedding = Tensor.rand(
+            -limit, limit, (self.max_seq_len, self.embed_dim), requires_grad= True
+        )
             
     def forward(self, X: Tensor) -> Tensor:
         """
@@ -136,50 +133,14 @@ class PositionalEncoding:
                 f"  🔧 Ensure your Embedding layer uses embed_dim={self.embed_dim}, or create PositionalEncoding(embed_dim={embed_dim}, ...)"
             )
         
-        if self.encoding_type == 'learned':
-            #* slice the embeddings using seq_len
-            #* and batch batch dimension for addition to the word embeddings
-            embedding = self.pos_embedding[:seq_len]
-            embedding_batched_data = embedding.data[np.newaxis, :, :]
-            embedding_batched = Tensor(embedding_batched_data)
-            
-            #* add the positional embeddings to the word embeddings
-            return embedding_batched
+        #* slice the embeddings using seq_len
+        #* and batch batch dimension for addition to the word embeddings
+        embedding = self.pos_embedding[:seq_len]
+        pos_data = embedding.data[np.newaxis, :, :]
+        pos_embedding_batched = Tensor(pos_data)
         
-        elif self.encoding_type == 'sinusoidal':
-            #* create positional indices
-            pos = np.arange(self.max_seq_len, dtype= np.float32)[:, np.newaxis]
-
-            #* create dimension indices for calculating frequencies
-            div_term = np.exp(
-                np.arange(0, self.embed_dim, 2, dtype=np.float32) * -(math.log(1000.0)/self.embed_dim)
-            )
-
-            #* initialize positional encoding matrix
-            pe = np.zeros((self.max_seq_len, self.embed_dim), dtype= np.float32)
-
-            ##* apply sine to even positions
-            pe[:, 0::2] = np.sin(pos * div_term)
-
-            #* apply cosine to odd positions
-            if self.embed_dim % 2 == 1:
-                pe[:, 1::2] = np.cos(pos * div_term[-1])
-            else:
-                pe[:, 1::2] = np.cos(pos * div_term)
-            
-            return pe[:seq_len]
-        
-        elif self.encoding_type is None:
-            return Tensor.zeros(X.shape)
-        else:
-            raise ValueError(
-                f"Unknown positional encoding type: '{self.encoding_type}'\n"
-                f"  ❌ pos_encoding must be 'learned', 'sinusoidal', or None\n"
-                f"  💡 'learned' = trainable position embeddings (task-specific but fixed max length)\n"
-                f"     'sinusoidal' = mathematical sin/cos patterns (no parameters, can extrapolate)\n"
-                f"     None = no positional encoding (order-agnostic model)\n"
-                f"  🔧 Use: EmbeddingLayer(..., pos_encoding='learned') or pos_encoding='sinusoidal'"
-            )
+        #* add the positional embeddings to the word embeddings
+        return pos_embedding_batched
         
     def __call__(self, X: Tensor) -> Tensor:
         "Allows call as a function"
@@ -187,9 +148,7 @@ class PositionalEncoding:
     
     def parameters(self):
         "Get the parameters of the layer"
-        if self.encoding_type == 'learned':
-            return [self.pos_embedding]
-        return []
+        return [self.pos_embedding]
     
     def __repr__(self) -> str:
         return f'PositionalEncoding(max_seq_len={self.max_seq_len}, embed_dim={self.embed_dim})'
