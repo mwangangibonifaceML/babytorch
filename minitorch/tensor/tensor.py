@@ -340,14 +340,14 @@ class Tensor:
             #* gradient of the first input
             if self.requires_grad:
                 if other.data.ndim >=2:
-                    other_transpose = other.data.swapaxes(-2,-1)
+                    other_transpose = other.data.swapaxes(-1,-2)
                     self._add_grad(grad_output @ other_transpose)
                 else:
                     self._add_grad(np.outer(grad_output,other.data))
             
             if other.requires_grad:
                 if other.data.ndim >=2:
-                    self_transpose = self.data.swapaxes(-2,-1)
+                    self_transpose = self.data.swapaxes(-1,-2)
                     other._add_grad(self_transpose @ grad_output)
                 else:
                     self._add_grad(np.outer(self.data @ grad_output))
