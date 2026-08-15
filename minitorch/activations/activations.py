@@ -119,6 +119,9 @@ class ReLU:
     def __call__(self, x: Tensor) -> Tensor:
         """Allows the activation to be called like a function."""
         return self.forward(x)
+    
+    def __repr__(self) -> str:
+        return 'Relu()'
 
 class Tanh:
     """Tanh activation: f(x) = tanh(x)
