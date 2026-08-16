@@ -5,6 +5,8 @@ from minitorch.tensor.tensor import Tensor
 from minitorch.optimizers.optim import Optimizer
 from minitorch.losses.losses import Loss
 from minitorch.nn.layers import Layer
+from minitorch.transformer.transformer import GPT
+from minitorch.dataloaders.dataloader import DataLoader
 
 #* define some constants
 DEFAULT_MAX_LR = 0.1
@@ -28,33 +30,24 @@ def clip_grad_norm(parameters: List[Tensor], max_norm: float = DEFAULT_MAX_NORM)
         return 0.0
     
     #* gather all gradients from all the parameters
-    total_gradients = 0.0
+    total_gradients_squared_sum = 0.0
     for param in parameters:
         if  param.grad is None:
             continue
         
-        if isinstance(param.grad, np.ndarray):
-            grad = param.grad
-        else:
-            grad = param.grad.data
-        
         #* square the gradients and sum them
-        total_gradients = total_gradients + np.sum(grad ** 2)
+        total_gradients_squared_sum += np.sum(param.grad ** 2)
         
     #* get the global norm for all gradients
-    total_norm = np.sqrt(total_gradients)
+    total_norm = np.sqrt(total_gradients_squared_sum)
             
     #* clipping the gradients if the total norm exceeds the max norm
     if total_norm > max_norm:
         clip_coeffient  = max_norm / total_norm
         
         for param in parameters:
-            if param.grad is not None:
-                if isinstance(param.grad, np.ndarray):
-                    param.grad = param.grad * clip_coeffient
-                else:
-                    param.grad.data = param.grad.data * clip_coeffient
-    
+            param.grad *= clip_coeffient
+
     return float(total_norm)
 
 
@@ -101,14 +94,26 @@ class CosineSchedule:
         return lr
     
 class Trainer:
-    def __init__(self,model, 
-                loss_fn, optimizer,scheduler: CosineSchedule | None = None,
-                clip_gradients = True) -> None:
+    """
+    Training orchastrator for neural networks.
+    
+    Handle forward pass, loss computation, backward pass, optimization,scheduling
+    checkpointing and evaluation.
+    
+    """
+    def __init__(self,
+                model: GPT, 
+                optimizer: Optimizer,
+                grad_clip_norm: float,
+                scheduler: CosineSchedule | None = None,
+                clip_gradients = True,
+                batch_size: int=4) -> None:
         self.model = model
-        self.loss_fn = loss_fn
         self.optimizer = optimizer
         self.scheduler = scheduler
         self.clip_gradients = clip_gradients
+        self.grad_clip_norm = grad_clip_norm
+        self.batch_size = batch_size
         
         #* training state
         self.epoch = 0
@@ -122,8 +127,14 @@ class Trainer:
             'learning_rates': []
         }
     
-    
-    def train_epoch(self, dataloader: Iterable, accumulation_steps: int =1) -> float:
+        #* enable gradient tracking for all model
+        #* parameters ----> some may be created without
+        #* requires_grad = True, explicitly enable them
+        for param in self.model.parameters():
+            if param.requires_grad is False:
+                param.requires_grad = True
+                
+    def train_epoch(self, dataloader: DataLoader, accumulation_steps: int =100) -> float:
         """
         Train for one epoch
 
@@ -142,7 +153,7 @@ class Trainer:
         #* 5. Record average loss, update scheduler, increment epoch.
         
         #* STEP 1
-        self.model.training = True
+        self.model.train()
         self.training_mode = True
         
         #* STEP 2
@@ -150,9 +161,18 @@ class Trainer:
         total_loss = 0.0
         num_batches = 0
         
-        for i, (inputs, targets) in enumerate(dataloader):
+        #* STEP 3 :update the scheduler at the start of each epoch
+        #*  to set the learning rate before training starts
+        if self.scheduler is not None:
+            learning_rate = self.scheduler.get_lr(self.epoch)
+            self.optimizer.lr = learning_rate
+            self.history['learning_rates'].append(learning_rate.item())
+        
+        #* STEP 4: process the batch and step the optimizer
+        for i in range(0,len(dataloader), accumulation_steps):
+            inputs, targets = dataloader.get_batch(self.batch_size)
             #* process the batch
-            accumulated_loss += self._process_batch(inputs, targets)
+            accumulated_loss = self._process_batch(inputs, targets)
             
             #* update parameters every accumulation step
             if (i + 1) % accumulation_steps == 0:
@@ -162,29 +182,23 @@ class Trainer:
                 num_batches += 1
                 self.step += 1
             
-        #* STEP 4
+        #* STEP 5 : Handle remaining accumulated gradients
         if accumulated_loss > 0:
             self._optimizer_update()
             total_loss += accumulated_loss
             num_batches += 1
         
-        #* STEP 5
-        # record the average loss
-        average_loss = total_loss/ num_batches
+        #* STEP 6
+        #* record the average loss
+        average_loss = total_loss/ max(num_batches,1)
         self.history['train_loss'].append(average_loss)
         
-        # update the scheduler
-        if self.scheduler is not None:
-            learning_rate = self.scheduler.get_lr(self.epoch)
-            self.optimizer.lr = learning_rate
-            self.history['learning_rates'].append(float(learning_rate))
-            
         # increment epochs
         self.epoch += 1
         return average_loss
         
         
-    def _process_batch(self, inputs: Tensor, targets: Tensor,  threshold: float = 0.3)-> float:
+    def _process_batch(self, inputs: Tensor, targets: Tensor)-> float:
         """
         Process a single batch by doing a forward pass, compute loss and backward pass on it.
         
@@ -197,12 +211,8 @@ class Trainer:
             Scaled loss value (float) for accumulation tracking
         """
         #* forward pass
-        predictions = self.model(inputs)
-        loss = self.loss_fn(predictions, targets)
-        
-        # #* compute scaled loss for accumulation
-        # scaled_loss = loss / accumulation_steps
-        
+        _, loss = self.model(inputs, targets)
+    
         # #* backward pass
         loss.backward()
         
@@ -214,11 +224,30 @@ class Trainer:
         """
         params = self.model.parameters()
         if self.clip_gradients:
-                clip_grad_norm(params) 
+            clip_grad_norm(params, self.grad_clip_norm) 
             
         self.optimizer.step()
         self.optimizer.zero_grad()
         
+    def eval_epoch(self, dataloader: DataLoader) -> tuple[float]:
+        #* turn the model from training mode to eval mode
+        self.model.eval()
+        self.training_mode = False
+        
+        total_loss = 0.0
+        num_batches = 0
+        
+        for i in range(0,len(dataloader),10):
+            inputs, targets = dataloader.get_batch(self.batch_size)
+            #* forward pass
+            _,loss = self.model(inputs, targets)
+            total_loss += loss
+            num_batches += 1
+    
+        avr_loss = total_loss / num_batches
+        self.history['eval_loss'].append(avr_loss.data)
+        return float(avr_loss.data)
+    
     # def _get_scheduler_state(self):
     #     if self.scheduler is None:
     #         return None
