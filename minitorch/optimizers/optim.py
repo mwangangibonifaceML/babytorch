@@ -23,6 +23,7 @@ import numpy as np
 from numpy.typing import NDArray
 from typing import List, Optional, Tuple
 from minitorch.tensor.tensor import Tensor
+from minitorch.nn.layers import Parameter
 
 #* constants for optimizer deafults
 DEFAULT_LEARNING_RATE_SGD = 0.01        # Default learning rate for SGD
@@ -42,7 +43,7 @@ class Optimizer:
         - zero_grad(): clear gradients from parameter
         - step(): update parameters based on gradients.(The real engine)
     """
-    def __init__(self, params: List[Tensor]) -> None:
+    def __init__(self, params: List[Tensor] | List[Parameter]) -> None:
         """
         Initialize the optimizer with the parameters to optimize
         """
@@ -82,7 +83,7 @@ class Optimizer:
 
 class SGD(Optimizer):
     def __init__(self,
-                params: List[Tensor],
+                params: List[Tensor] | List[Parameter],
                 lr: float= DEFAULT_LEARNING_RATE_SGD,
                 momentum: float=0.0,
                 weight_decay: float= 0.0) -> None:
@@ -183,7 +184,7 @@ class Adam(Optimizer):
     
     """
     def __init__(self,
-                params: List[Tensor],
+                params: List[Tensor] | List[Parameter],
                 betas: Tuple[float, float] = (DEFAULT_BETA1, DEFAULT_BETA2),
                 lr: float= DEFAULT_LEARNING_RATE_ADAM,
                 weight_decay: float = 0.0,
@@ -276,7 +277,7 @@ class AdamW(Optimizer):
     
     """
     def __init__(self,
-                params: List[Tensor],
+                params: List[Tensor] | List[Parameter],
                 betas: Tuple[float, float] = (DEFAULT_BETA1, DEFAULT_BETA2),
                 lr: float= DEFAULT_LEARNING_RATE_ADAM,
                 weight_decay: float = 0.0,
